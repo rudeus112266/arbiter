@@ -1,12 +1,16 @@
 import { nextQuestionId, stashQuestion, getStashedQuestion, dropStashedQuestion } from './pendingQuestions.js';
-import { createJob, updateJob, getJob } from './jobs.js';
+import { createJob, updateJob, getJob, claimJob } from './jobs.js';
 import { dispatchAndCollect, recordOutcome, getSmoothedOnlineWorkerCount } from './dispatch.js';
 import { reconcile } from './reconcile.js';
 import { resolveQuestion, refundQuestion, getQuestionOnChain } from './stellarClient.js';
 import { resolveTier, listTiersForClient, stroopsToUsdc, priceForTier } from './pricing.js';
 import { incrementStat } from './stats.js';
 import { recordPayerQuestion } from './payerIndex.js';
+import { jobLogger } from './logger.js';
+import { store } from './store.js';
 import { config } from './config.js';
+
+const IDEMPOTENCY_PREFIX = 'idempotency:';
 
 export async function issueChallenge(questionText, tierKey, category) {
   const questionId = (await nextQuestionId()).toString();
@@ -53,6 +57,29 @@ export async function issueChallenge(questionText, tierKey, category) {
   };
 }
 
+/**
+ * Wraps issueChallenge() with client-supplied idempotency-key support
+ * (Stripe's convention: an `Idempotency-Key` header on a create-like call).
+ * Without this, a client whose request timed out on THEIR end after the
+ * server had already minted a questionId and responded would, on retry,
+ * mint a SECOND questionId for what was semantically the same ask — no
+ * funds are at risk either way (nothing is paid until submit() on-chain),
+ * but it's confusing and wasteful. step 2 of the flow doesn't need this:
+ * questionId itself is already a natural idempotency key there (see
+ * startFulfillment's claimJob() usage).
+ */
+export async function issueChallengeIdempotent(questionText, tierKey, category, idempotencyKey) {
+  if (!idempotencyKey) return issueChallenge(questionText, tierKey, category);
+
+  const cacheKey = IDEMPOTENCY_PREFIX + idempotencyKey;
+  const cached = await store.get(cacheKey);
+  if (cached) return cached;
+
+  const challenge = await issueChallenge(questionText, tierKey, category);
+  await store.set(cacheKey, challenge, config.pendingQuestionTtlMs);
+  return challenge;
+}
+
 export async function verifyPayment(questionId) {
   const pending = await getStashedQuestion(questionId);
   if (!pending) return { ok: false, status: 400, reason: 'unknown or expired questionId' };
@@ -81,8 +108,22 @@ export async function verifyPayment(questionId) {
  * immediately with a job id. Replaces v1's design of holding the client's
  * HTTP request open for up to the quorum timeout, which is fragile against
  * proxies, mobile networks, and serverless/edge request timeouts.
+ *
+ * Idempotent on questionId: if a client retries step 2 of the /oracle flow
+ * (network blip, timeout on their end) after the server already started
+ * fulfillment, calling this again must NOT re-dispatch the question to
+ * workers a second time or race a second resolve()/refund() attempt
+ * against the first. questionId is already a unique, client-supplied key
+ * at this point (it came from step 1), so it doubles as the natural
+ * idempotency key here — no separate header needed for this step. Uses an
+ * atomic claim (see jobs.js::claimJob) rather than a plain existence check,
+ * since two truly concurrent retries could otherwise both observe "no job
+ * yet" and both proceed.
  */
 export async function startFulfillment(questionId, pending, tier) {
+  const claimed = await claimJob(questionId);
+  if (!claimed) return { jobId: questionId };
+
   await createJob(questionId, {
     question: pending.question,
     tier: tier.key,
@@ -96,7 +137,7 @@ export async function startFulfillment(questionId, pending, tier) {
     // fulfillOracleCall is written to always settle the escrow before
     // returning; this catch is a last-resort net so a bug there can't leave
     // the job record stuck in 'awaiting_workers' forever.
-    console.error(`[oracle] job ${questionId} fulfillment crashed unexpectedly:`, err);
+    jobLogger(questionId).error({ err }, 'fulfillment crashed unexpectedly');
     updateJob(questionId, {
       status: 'settled',
       outcome: 'refund_pending_timeout',
@@ -125,12 +166,12 @@ async function fulfillOracleCall(questionId, pending, tier) {
     // empty submissions list still routes through reconcile()'s no-answers
     // path below, which forces a refund. Never let a dispatch failure be
     // the reason a payment goes unsettled.
-    console.error(`[oracle] job ${questionId} dispatch threw unexpectedly:`, err);
+    jobLogger(questionId).error({ err }, 'dispatch threw unexpectedly');
   }
 
   await updateJob(questionId, { status: 'reconciling', totalAnswers: submissions.length });
 
-  const result = await reconcile(pending.question, submissions);
+  const result = await reconcile(pending.question, submissions, questionId);
 
   const shouldResolve =
     submissions.length > 0 && result.matchingWorkerIds.length > 0 && result.confidence >= config.minConfidence;
@@ -174,7 +215,7 @@ async function settleResolved(questionId, submissions, result) {
     // operators can see how often it actually happens in practice.
     const onChainNow = await getQuestionOnChain(questionId).catch(() => null);
     if (onChainNow && onChainNow.status === 'refunded') {
-      console.warn(`[oracle] job ${questionId} lost the settlement race to a third-party refund_timeout()`);
+      jobLogger(questionId).warn('lost the settlement race to a third-party refund_timeout()');
       await recordReputationOutcomes(submissions, []);
       await incrementStat('refunded');
       await updateJob(questionId, {
@@ -192,7 +233,7 @@ async function settleResolved(questionId, submissions, result) {
     // some other reason (e.g. RPC hiccup). Fail closed: fall back to
     // attempting a refund rather than leaving the job — and the payer's
     // money — stuck mid-flight.
-    console.error(`[oracle] job ${questionId} resolve() failed, falling back to refund:`, err.message);
+    jobLogger(questionId).error({ err }, 'resolve() failed, falling back to refund');
     await settleRefunded(questionId, submissions, { ...result, reason: `on-chain resolve failed: ${err.message}` });
   }
 }
@@ -205,7 +246,10 @@ async function settleRefunded(questionId, submissions, result) {
       // contract's permissionless refund_timeout() escape hatch exists
       // for: once TIMEOUT_LEDGERS pass, anyone — including the payer's own
       // client — can force the refund without this backend's cooperation.
-      console.error(`[oracle] job ${questionId} refund() ALSO failed — payer can fall back to refund_timeout():`, err.message);
+      jobLogger(questionId).error(
+        { err },
+        "refund() ALSO failed — payer can fall back to refund_timeout()",
+      );
       return null;
     });
 

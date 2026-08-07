@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config.js';
+import { logger } from './logger.js';
 
 function normalize(text) {
   return text
@@ -58,7 +59,16 @@ const REPORT_CONSENSUS_TOOL = {
 let anthropicClient = null;
 function getClient() {
   if (!config.anthropicApiKey) return null;
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: config.anthropicApiKey });
+  if (!anthropicClient) {
+    // The SDK's own defaults (2 retries, but a 10-MINUTE timeout) are tuned
+    // for long-running batch/agentic use, not a call sitting in the
+    // critical path of settling a question with a fail-closed fallback
+    // waiting behind it. Keep the SDK's built-in retry (it already handles
+    // backoff + which errors are retryable correctly) but cut the ceiling
+    // down to something that fails fast enough to still hit the
+    // deterministic vote fallback promptly if Claude is genuinely down.
+    anthropicClient = new Anthropic({ apiKey: config.anthropicApiKey, timeout: 15_000, maxRetries: 2 });
+  }
   return anthropicClient;
 }
 
@@ -112,7 +122,7 @@ async function reconcileWithClaude(question, submissions) {
  * identity still gets Claude's (weak, non-guaranteed, but nonzero)
  * plausibility read, same as a genuine disagreement would.
  */
-export async function reconcile(question, submissions) {
+export async function reconcile(question, submissions, questionId) {
   if (submissions.length === 0) {
     return { consensus: null, confidence: 0, matchingWorkerIds: [], method: 'no-answers' };
   }
@@ -132,7 +142,7 @@ export async function reconcile(question, submissions) {
   try {
     return await reconcileWithClaude(question, submissions);
   } catch (err) {
-    console.error('[reconcile] Claude reconciliation failed, falling back to exact-match vote:', err.message);
+    logger.error({ err, questionId }, 'Claude reconciliation failed, falling back to exact-match vote');
     return {
       consensus: vote.consensus,
       confidence: vote.confidence,

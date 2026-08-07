@@ -2,6 +2,7 @@ import { createJob, updateJob } from './jobs.js';
 import { resolveTier } from './pricing.js';
 import { exactMatchVote } from './reconcile.js';
 import { config } from './config.js';
+import { jobLogger } from './logger.js';
 
 /**
  * Sandbox mode: ask a question with zero real payment and get a realistic,
@@ -97,7 +98,7 @@ export async function startSandboxFulfillment(questionId, questionText, { tierKe
   });
 
   runSandboxFulfillment(questionId, questionText, mode).catch((err) => {
-    console.error(`[sandbox] job ${questionId} crashed unexpectedly:`, err);
+    jobLogger(questionId).error({ err, sandbox: true }, 'sandbox job crashed unexpectedly');
     updateJob(questionId, {
       status: 'settled',
       outcome: 'refunded',

@@ -1,6 +1,14 @@
 import { Horizon, TransactionBuilder, Operation, Asset, BASE_FEE, Address, xdr, nativeToScVal } from '@stellar/stellar-sdk';
 import { config } from './config.js';
 import { getAdminKeypair, u64Arg, addressArg } from './stellarClient.js';
+import { withRetry } from './retry.js';
+
+// Horizon submission is safe to retry as a whole: a resubmission of the
+// same already-signed transaction either succeeds once or comes back with
+// a definitive rejection (e.g. tx_bad_seq if an earlier attempt actually
+// landed) — Stellar's sequence-number model rules out a double-spend from
+// retrying, the same reasoning stellarClient.js's invokeAsAdmin relies on.
+const HORIZON_RETRY_OPTS = { attempts: 2, timeoutMs: 10_000, baseDelayMs: 300 };
 
 let horizonServer = null;
 function getHorizon() {
@@ -23,7 +31,10 @@ function usdcAsset() {
  */
 export async function buildSponsoredOnboardTx(workerAddress) {
   const admin = getAdminKeypair();
-  const platformAccount = await getHorizon().loadAccount(admin.publicKey());
+  const platformAccount = await withRetry(() => getHorizon().loadAccount(admin.publicKey()), {
+    ...HORIZON_RETRY_OPTS,
+    label: 'horizon.loadAccount',
+  });
 
   const tx = new TransactionBuilder(platformAccount, { fee: BASE_FEE, networkPassphrase: config.networkPassphrase })
     .addOperation(Operation.beginSponsoringFutureReserves({ sponsoredId: workerAddress }))
@@ -40,7 +51,10 @@ export async function finalizeSponsoredOnboardTx(workerSignedXdr) {
   const admin = getAdminKeypair();
   const tx = TransactionBuilder.fromXDR(workerSignedXdr, config.networkPassphrase);
   tx.sign(admin);
-  const res = await getHorizon().submitTransaction(tx);
+  const res = await withRetry(() => getHorizon().submitTransaction(tx), {
+    ...HORIZON_RETRY_OPTS,
+    label: 'horizon.submitTransaction(onboard)',
+  });
   return { hash: res.hash };
 }
 
@@ -91,13 +105,18 @@ function assertSingleMatchingInvocation(tx, label, functionName, args) {
 
 async function relayFeeBump(signedInnerXdr, label, functionName, args) {
   const innerTx = TransactionBuilder.fromXDR(signedInnerXdr, config.networkPassphrase);
+  // Deliberately OUTSIDE the retry below: a deterministic validation check
+  // must fail once and immediately, not get retried against unchanged input.
   assertSingleMatchingInvocation(innerTx, label, functionName, args);
 
   const admin = getAdminKeypair();
   const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(admin, BASE_FEE, innerTx, config.networkPassphrase);
   feeBumpTx.sign(admin);
 
-  const res = await getHorizon().submitTransaction(feeBumpTx);
+  const res = await withRetry(() => getHorizon().submitTransaction(feeBumpTx), {
+    ...HORIZON_RETRY_OPTS,
+    label: `horizon.submitTransaction(${label})`,
+  });
   return { hash: res.hash };
 }
 

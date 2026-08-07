@@ -13,11 +13,12 @@ payment is refunded if consensus can't be reached. The system is designed to
 permissionless timeout refund guarantees payers are never permanently stuck.
 
 This is a reengineered build of the original StellarSage spec, built across
-four rounds — five workflow improvements, four more aimed at friction and
-unit economics, thirteen fixes from a structured pressure test, and five
-more starting from actual customer journeys and working backward to the
-tech — each integrated end-to-end (contract → backend → frontend → demo
-tooling → landing page), not just described.
+five rounds — five workflow improvements, four more aimed at friction and
+unit economics, thirteen fixes from a structured pressure test, five more
+starting from actual customer journeys and working backward to the tech,
+and a final pass converting a written production-readiness checklist into
+six real fixes — each integrated end-to-end (contract → backend → frontend
+→ demo tooling → landing page → CI), not just described.
 
 ## What changed, and why
 
@@ -300,6 +301,113 @@ retrofitting a consumer front door onto it would dilute both instead of
 serving either well. A consumer product remains a legitimate *separate*
 bet, not a rejected one — see the roadmap below.
 
+## Round 5 — a written production-readiness checklist, converted to fixes
+
+Someone handed over a standard 10-point "idea to shipped" checklist (spec
+discipline, architecture, auth, testing, CI/CD, security, observability,
+failure handling, deploy strategy, post-launch discipline) and asked for an
+honest confirm-against-reality pass, not a rewording of it. That audit
+surfaced six concrete, fixable findings — critical to medium — plus one
+correction to the audit's own assumed stack (this project is Express +
+vanilla JS/Vite, not the NestJS/Next.js the checklist assumed; noted
+explicitly rather than silently pretended away). All six are fixed below.
+
+**Critical**
+
+- **`POST /app/answer` had no cryptographic identity check at all.**
+  `workerId` was a client-supplied string with nothing binding it to actual
+  control of that address — anyone could submit an answer *as* an
+  already-established, trusted worker's address, either blocking that
+  worker's real answer (one-answer-per-id) or borrowing their reputation
+  for the fast-path. This is a sharper problem than the sybil-identity
+  concern round 3 addressed: it's impersonation of a *real* identity, not
+  just cheap creation of a fresh one. Fixed with `workerAuth.js`: a
+  challenge/response flow using `manageData` (never `signMessage`, whose
+  semantics vary across wallets) — the worker signs a server-issued,
+  single-use nonce with their real key, gets back an HMAC-signed bearer
+  session, and every subsequent `/app/answer` and `/app/events` call for a
+  real-address `workerId` requires it. Arbitrary test-string ids (no
+  `WORKER_SECRET`) are unaffected — this only applies to real Stellar
+  addresses. 10 unit tests (wrong key, replay, forged nonce, tampered
+  token) plus 5 HTTP tests proving the actual impersonation attempt gets
+  rejected, not just the happy path. Wired into the worker console
+  (`ensureSession()` in `main.js`) and `worker-sim.js`, verified live
+  end-to-end against a running backend with zero funding needed (the
+  challenge transaction is signed but never submitted on-chain).
+- **A critical `protobufjs` RCE advisory shipped in `app/`'s dependency
+  tree** via `allowAllModules()` pulling in `@trezor/connect-*` for a
+  hardware-wallet adapter never in the original supported-wallet list.
+  Investigated before fixing, not just patched blind: `grep`'d the actual
+  built bundle and found **zero** occurrences of "trezor"/"protobuf" in
+  either version — the vulnerable code was already excluded by tree-shaking
+  since nothing in our import graph reached it, meaning real runtime
+  exposure was already zero. Fixed anyway, properly: switched from
+  `allowAllModules()` to an explicit, hand-picked module list (matching the
+  original wallet-support list exactly) as defense-in-depth against a
+  *future* kit version silently adding more, plus a `protobufjs` version
+  override so the finding disappears from `npm audit` entirely rather than
+  relying on tree-shaking as the only safety net. `npm audit --audit-level=high`
+  now passes clean (32 vulnerabilities → 28, critical/high count: 9 → 0;
+  the remaining 28 are low/moderate, in a separate, also similarly
+  unreachable dependency chain).
+
+**High**
+
+- **No CI/CD, and not even a git repository** — "no merge without tests
+  passing" was structurally impossible with zero commit history to gate.
+  Fixed: `git init` plus `.github/workflows/ci.yml` with one job per
+  package (contract, backend, app, demo-agent), each running its real
+  test/build/audit command. Every command in the workflow was verified
+  to actually pass locally before being committed, including a genuinely
+  new capability discovered mid-fix: this environment turned out to have
+  the `stellar` CLI available after all, so the contract now has a real
+  `stellar contract build` step confirming it compiles to deployable WASM
+  (15.5KB optimized, all 14 expected functions present) — not just
+  `cargo test`, which doesn't touch the WASM target at all.
+- **Unstructured `console.log`/`console.error` with no request or job
+  correlation** — impossible to trace one question's dispatch → reconcile →
+  settle lifecycle through the logs, or tie a backend error back to the
+  HTTP request that caused it. Fixed with `pino`: `logger.js` provides a
+  base structured logger, an `httpLogger` middleware (one JSON line per
+  request with method/path/status/duration/request-id), and `jobLogger(id)`
+  for the background fulfillment code that isn't running inside a request
+  at all. Every `console.*` call in `backend/src/` that could carry
+  question/job/worker context now does — verified live by grepping the
+  actual log output of a real request for its correlation fields, in both
+  pretty (dev) and `LOG_FORMAT=json` (deployment) modes.
+
+**Medium**
+
+- **No idempotency protection on `POST /oracle`.** Two distinct gaps, both
+  fixed: (1) step 1 (mint a new question) had no way for a client whose
+  request timed out on *their* end to avoid minting a second, redundant
+  questionId on retry — fixed with a Stripe-style `Idempotency-Key` header,
+  cached and replayed via the store. (2) step 2 (trigger fulfillment) had a
+  real, previously-unflagged bug: `startFulfillment()` called
+  `createJob()` unconditionally, so a genuine concurrent retry for the same
+  questionId could double-dispatch the question to workers and race two
+  settlement attempts against each other. Fixed with `jobs.js::claimJob()`,
+  an atomic claim built on the same `store.incr()` primitive the rate
+  limiter uses (not a second locking mechanism) — proven under actual
+  concurrent load, not just sequential calls: 10 simultaneous `claimJob()`
+  calls for the same id, exactly 1 winner, every time.
+- **No timeout or retry policy on any external call** — Claude, Soroban
+  RPC, and Horizon could all hang indefinitely or fail permanently on one
+  transient blip. Fixed with `retry.js` (generic exponential-backoff
+  retry + per-attempt timeout, 10 unit tests including a real concurrent
+  race and backoff-timing check) applied to Soroban RPC reads/writes and
+  Horizon submission — deliberately short and bounded (2 attempts, single-
+  digit-second timeouts), because this sits in front of a fail-closed
+  refund path that should still trigger promptly, not "retry for 30
+  seconds" the way a typical web service would. For Claude specifically,
+  the fix was different and more precise: the Anthropic SDK already has
+  its own retry logic, just a 10-*minute* default timeout tuned for
+  long-running agentic use — cut to 15s rather than layering a second,
+  redundant retry loop on top. Verified live against a real Soroban RPC
+  endpoint (no contract configured, so it genuinely fails) — confirmed the
+  retry actually fires, is logged with full correlation, and the whole
+  request still resolves in ~200ms, not a hang.
+
 ## Architecture
 
 ```
@@ -333,14 +441,17 @@ existing `jobs.js` store.
 
 ```
 arbiter/
+├── .github/workflows/ci.yml      # contract/backend/app/demo-agent test+build+audit gates
 ├── Cargo.toml                    # workspace: contracts/oracle-escrow
 ├── contracts/oracle-escrow/      # Soroban contract + tests (38 tests)
 ├── backend/                      # Express oracle service
 │   ├── src/{server,oracle,jobs,dispatch,reconcile,
 │   │         pendingQuestions,pricing,sponsor,stellarClient,
-│   │         store,rateLimit,sandbox,push,stats,payerIndex,config}.js
+│   │         store,rateLimit,sandbox,push,stats,payerIndex,
+│   │         workerAuth,logger,retry,config}.js
 │   └── test/{dispatch,reconcile,pricing,sponsor,pendingQuestions,
-│              rateLimit,server,sandbox,push,stats,payerIndex}.test.js  (75 tests)
+│              rateLimit,server,sandbox,push,stats,payerIndex,
+│              workerAuth,idempotency,retry}.test.js  (109 tests)
 ├── app/                          # Vite worker console + buyer dashboard (multi-page)
 │   ├── index.html                # worker console
 │   ├── dashboard.html            # read-only buyer dashboard
@@ -357,9 +468,9 @@ arbiter/
 # Contract — 38 tests, no chain needed
 cargo test -p oracle-escrow
 
-# Backend — 75 tests, no chain needed (spawns real ephemeral server
-# processes for the rate-limit/CORS/push/sandbox integration tests, still
-# no chain access)
+# Backend — 109 tests, no chain needed (spawns real ephemeral server
+# processes for the rate-limit/CORS/push/sandbox/auth integration tests,
+# still no chain access)
 cd backend && npm install && npm test
 cp .env.example .env   # fill in ORACLE_CONTRACT_ID / PLATFORM_SECRET etc. for real use
 # optional — enables push notifications:
@@ -396,12 +507,24 @@ Verified in this environment:
   single payout), admin rotation, the timeout-snapshot regression test
   (proving `set_timeout_ledgers()` can't retroactively extend a pending
   question's deadline), and worker-list overlap/duplicate rejection.
-- Backend: all 75 unit + integration tests pass, including sandbox mode
+  **Correction to earlier rounds' notes**: this environment does have the
+  `stellar` CLI (found while building round 5's CI workflow) — the
+  contract builds to real, deployable WASM (`stellar contract build`,
+  15.5KB optimized, all 14 exported functions present and correctly
+  named). Earlier claims that no WASM build was possible here were wrong;
+  only an actual testnet *deployment* remains genuinely unverified (needs
+  a funded account and network access this environment doesn't have).
+- Backend: all 109 unit + integration tests pass, including sandbox mode
   (deterministic outcome-simulation for all three modes, isolation from
   real `/stats` counters proven directly, not just asserted), push
   notification subscription CRUD and category-eligibility filtering
   (`notifyWorker` proven not to throw even against an unreachable push
-  endpoint), and `payerIndex.js`'s aggregation math.
+  endpoint), `payerIndex.js`'s aggregation math, worker session
+  auth (10 unit + 5 HTTP tests, including a real impersonation attempt
+  rejected), idempotency (`claimJob()` proven under actual concurrent
+  load, not just sequential calls), and the retry/backoff module (a real
+  concurrent race, backoff-timing verification, and a live test against
+  an actual Soroban RPC endpoint).
 - Frontend: `vite build` succeeds for the now-multi-page app (worker
   console + buyer dashboard sharing a code-split vendor chunk) and for the
   landing page.
@@ -420,8 +543,9 @@ Verified in this environment:
   e.g. `StrKey.encodeContract()` was used to mint a valid fake contract id
   so the security-check tests could run without a live deployment.
 
-Not verified here, because this environment has no `stellar`/`soroban` CLI,
-no deployed contract, and no Redis instance:
+Not verified here, because this environment has no deployed contract, no
+funded testnet account, and no Redis instance (the `stellar` CLI itself
+IS available — see the WASM-build correction above):
 - An actual testnet deployment and `initialize()` call.
 - The full `/oracle` → payment → dispatch → reconcile → settle path end to end
   against a live chain (`oracle.js`'s chain-touching branches are exercised
@@ -475,10 +599,25 @@ Smaller, more mechanical follow-ups:
 - The frontend bundle is ~1.4MB (unminified stellar-sdk pulled in for
   client-side stake/withdraw tx building) — code-splitting it behind a
   dynamic `import()` would help first-paint time.
-- Structured logging with tx-hash correlation ids; alert on refund-rate anomalies.
+- Structured logging (round 5) covers request/job correlation; it isn't
+  wired to an actual alerting destination (PagerDuty/Slack/etc.) — the
+  `lost_race_to_timeout_refund` and `refund_pending_timeout` outcomes are
+  tagged distinctly in the logs and job records, ready to alert on, but
+  nothing consumes them into a real alert yet.
 - Mainnet cutover: swap network passphrase/RPC URLs/USDC issuer, independent
   contract audit, load-test concurrent dispatch.
-- Wire `e2e/` into CI once implemented.
+- `.github/workflows/ci.yml` exists and every command in it was verified
+  locally, but has never actually run on GitHub's infrastructure (no
+  remote configured) — first real push should be watched closely. Wire
+  `e2e/` in as its own job once it's implemented.
+- No staging environment, blue-green/canary deploys, or database backup
+  procedure — there's nowhere deployed yet to stage against, and no
+  database (in-memory/optional Redis) to back up. Both are real gaps for
+  an actual launch, not addressed by this pass.
+- No incident runbook or alerting cadence (top-3-incidents doc, weekly
+  error-rate/p95 review) — round 5 built the raw material (structured
+  logs, `/stats`, tagged settlement-race outcomes) but not the operational
+  process around them.
 - `app/public/manifest.json` ships with empty `icons` — needs real PNG
   assets at standard sizes before "Add to Home Screen" looks finished (the
   manifest and service worker are otherwise fully functional without them).

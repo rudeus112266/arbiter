@@ -57,6 +57,11 @@ export const config = Object.freeze({
   // (wide open) for local dev — lock this down for any real deployment.
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '*').split(',').map((s) => s.trim()).filter(Boolean),
 
+  // 'json' for real deployments (log aggregators parse JSON lines
+  // directly); anything else pretty-prints for local dev readability.
+  logFormat: process.env.LOG_FORMAT || 'pretty',
+  logLevel: process.env.LOG_LEVEL || 'info',
+
   maxQuestionLength: num(process.env.MAX_QUESTION_LENGTH, 2000),
   maxAnswerLength: num(process.env.MAX_ANSWER_LENGTH, 2000),
 

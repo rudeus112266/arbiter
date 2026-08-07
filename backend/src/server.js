@@ -4,7 +4,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { config } from './config.js';
-import { issueChallenge, verifyPayment, startFulfillment, getJobStatus } from './oracle.js';
+import { issueChallengeIdempotent, verifyPayment, startFulfillment, getJobStatus } from './oracle.js';
 import {
   onlineWorkerCount,
   checkConnectionRateLimit,
@@ -29,10 +29,16 @@ import { getOwedOnChain, getStakeOnChain } from './stellarClient.js';
 import { stroopsToUsdc } from './pricing.js';
 import { checkRateLimit } from './rateLimit.js';
 import { issueSandboxChallenge, startSandboxFulfillment } from './sandbox.js';
+import { logger, httpLogger } from './logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// One structured log line per request (method/path/status/duration/request
+// id), and req.log is available in every handler below for attaching
+// further context (questionId, workerId, etc.) to that same request's
+// trace. Placed before every other middleware so nothing is unlogged.
+app.use(httpLogger);
 
 // Wide open ('*') by default for local dev; set ALLOWED_ORIGINS to a
 // comma-separated list to lock this down for a real deployment. Wide-open
@@ -94,7 +100,7 @@ app.post('/oracle/sandbox', rateLimited('sandbox', byIp), async (req, res) => {
     const { jobId } = await startSandboxFulfillment(questionId, question, { tierKey: tier, simulate });
     return res.status(202).json({ ...challenge, jobId, statusUrl: `/oracle/${jobId}` });
   } catch (err) {
-    console.error('[sandbox] failed to start:', err);
+    req.log.error({ err }, 'sandbox failed to start');
     return res.status(500).json({ error: 'failed to start sandbox request' });
   }
 });
@@ -112,10 +118,10 @@ app.post('/oracle', rateLimited('oracle', byIp), async (req, res) => {
       return res.status(400).json({ error: `body.question must be at most ${config.maxQuestionLength} characters` });
     }
     try {
-      const challenge = await issueChallenge(question, tier, category);
+      const challenge = await issueChallengeIdempotent(question, tier, category, req.header('Idempotency-Key'));
       return res.status(402).json(challenge);
     } catch (err) {
-      console.error('[oracle] failed to issue challenge:', err);
+      req.log.error({ err }, 'failed to issue challenge');
       return res.status(500).json({ error: 'failed to issue payment challenge' });
     }
   }
@@ -136,7 +142,7 @@ app.post('/oracle', rateLimited('oracle', byIp), async (req, res) => {
       timeoutMs: verdict.tier.timeoutMs,
     });
   } catch (err) {
-    console.error('[oracle] failed to process payment/fulfillment:', err);
+    req.log.error({ err, questionId }, 'failed to process payment/fulfillment');
     return res.status(500).json({ error: 'failed to process payment' });
   }
 });
@@ -180,7 +186,7 @@ app.post('/sponsor/onboard/build', rateLimited('sponsor', byIp), async (req, res
     const xdr = await buildSponsoredOnboardTx(address);
     res.json({ xdr });
   } catch (err) {
-    console.error('[sponsor] onboard/build failed:', err);
+    req.log.error({ err }, 'sponsor onboard/build failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -192,7 +198,7 @@ app.post('/sponsor/onboard/submit', rateLimited('sponsor', byIp), async (req, re
     const result = await finalizeSponsoredOnboardTx(xdr);
     res.json(result);
   } catch (err) {
-    console.error('[sponsor] onboard/submit failed:', err);
+    req.log.error({ err }, 'sponsor onboard/submit failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -212,7 +218,7 @@ app.post('/sponsor/pay', rateLimited('sponsor', byIp), async (req, res) => {
   } catch (err) {
     // Deliberately 400, not 500 — a rejected fee-bump is almost always the
     // security check refusing a malformed/mismatched inner transaction.
-    console.error('[sponsor] pay failed:', err.message);
+    req.log.error({ err }, 'sponsor pay failed');
     res.status(400).json({ error: err.message });
   }
 });
@@ -226,7 +232,7 @@ app.post('/sponsor/stake', rateLimited('sponsor', byIp), async (req, res) => {
     const result = await feeBumpStake(xdr, workerAddress, amountStroops);
     res.json(result);
   } catch (err) {
-    console.error('[sponsor] stake failed:', err.message);
+    req.log.error({ err }, 'sponsor stake failed');
     res.status(400).json({ error: err.message });
   }
 });
@@ -240,7 +246,7 @@ app.post('/sponsor/withdraw', rateLimited('sponsor', byIp), async (req, res) => 
     const result = await feeBumpWithdraw(xdr, workerAddress);
     res.json(result);
   } catch (err) {
-    console.error('[sponsor] withdraw failed:', err.message);
+    req.log.error({ err }, 'sponsor withdraw failed');
     res.status(400).json({ error: err.message });
   }
 });
@@ -254,7 +260,7 @@ app.get('/workers/:address/owed', async (req, res) => {
     const owedStroops = await getOwedOnChain(req.params.address);
     res.json({ owedStroops: owedStroops.toString(), owed: stroopsToUsdc(owedStroops) });
   } catch (err) {
-    console.error('[workers] owed lookup failed:', err.message);
+    req.log.error({ err }, 'worker owed lookup failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -264,7 +270,7 @@ app.get('/workers/:address/stake', async (req, res) => {
     const stakeStroops = await getStakeOnChain(req.params.address);
     res.json({ stakeStroops: stakeStroops.toString(), stake: stroopsToUsdc(stakeStroops) });
   } catch (err) {
-    console.error('[workers] stake lookup failed:', err.message);
+    req.log.error({ err }, 'worker stake lookup failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -395,7 +401,8 @@ app.post('/app/answer', rateLimited('answer', byIp), (req, res) => {
 app.use(express.static(path.join(__dirname, '../../app/dist')));
 
 app.listen(config.port, () => {
-  console.log(`[server] Arbiter backend listening on :${config.port}`);
-  console.log(`[server] contract=${config.contractId || '(unset)'} network=${config.networkPassphrase}`);
-  console.log(`[server] CORS allowed origins: ${config.allowedOrigins.join(', ')}`);
+  logger.info(
+    { port: config.port, contractId: config.contractId || null, network: config.networkPassphrase, allowedOrigins: config.allowedOrigins },
+    `Arbiter backend listening on :${config.port}`,
+  );
 });

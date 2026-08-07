@@ -2,6 +2,7 @@ import { store } from './store.js';
 import { config } from './config.js';
 import { checkRateLimit } from './rateLimit.js';
 import { getPushEligibleWorkerIds, notifyWorker } from './push.js';
+import { jobLogger } from './logger.js';
 
 // Live worker registry — inherently process-local because it holds open SSE
 // response objects (see the multi-instance caveat in store.js).
@@ -190,7 +191,7 @@ export function dispatchAndCollect(questionId, questionText, { quorumSize, timeo
     state.finish = finish;
 
     broadcast(questionId, questionText, { category, quorumSize, expiresInMs: timeoutMs }).catch((err) => {
-      console.error('[dispatch] broadcast failed:', err.message);
+      jobLogger(questionId).error({ err }, 'broadcast failed');
     });
   });
 }

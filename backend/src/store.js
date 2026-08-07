@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { logger } from './logger.js';
 
 /**
  * Storage abstraction so pendingQuestions/jobs/reputation/rate-limits
@@ -90,18 +91,18 @@ class RedisStore {
 
 async function createStore() {
   if (!config.redisUrl) {
-    console.log('[store] REDIS_URL not set — using in-memory store (single-instance only)');
+    logger.info('REDIS_URL not set — using in-memory store (single-instance only)');
     return new MemoryStore();
   }
   try {
     const { default: Redis } = await import('ioredis');
     const client = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
     await client.connect();
-    client.on('error', (err) => console.error('[store] redis error:', err.message));
-    console.log('[store] connected to Redis — state survives restarts and can be shared across instances');
+    client.on('error', (err) => logger.error({ err }, 'redis error'));
+    logger.info('connected to Redis — state survives restarts and can be shared across instances');
     return new RedisStore(client);
   } catch (err) {
-    console.error(`[store] failed to connect to Redis (${err.message}) — falling back to in-memory store`);
+    logger.error({ err }, 'failed to connect to Redis — falling back to in-memory store');
     return new MemoryStore();
   }
 }

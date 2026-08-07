@@ -1,5 +1,6 @@
 import { Keypair, TransactionBuilder, Contract, Account, Address, nativeToScVal, scValToNative, rpc } from '@stellar/stellar-sdk';
 import { config } from './config.js';
+import { withRetry } from './retry.js';
 
 let server = null;
 export function getServer() {
@@ -34,31 +35,49 @@ export function vecOfAddresses(addresses) {
 /** Builds, prepares (simulates + assembles auth/footprint), signs as the
  * platform admin, submits, and polls a contract call. Used ONLY for
  * resolve()/refund() — the backend never signs on behalf of a payer or
- * worker. */
+ * worker.
+ *
+ * Retried as a whole (not just the send step): each attempt re-fetches a
+ * fresh account/sequence number and rebuilds the transaction from scratch,
+ * so retrying the full flow is safe — there's no risk of resubmitting a
+ * stale, already-consumed sequence number. A double-send of the same
+ * *logical* call is also safe at the contract level: resolve()/refund()
+ * both reject a non-Pending question, so a retry that lands after an
+ * earlier attempt actually succeeded just fails harmlessly with
+ * QuestionNotPending instead of double-settling anything. Bounded to 2
+ * attempts / 10s each — this sits in the critical path of settling a
+ * question, so it must fail fast enough to still hit the fail-closed
+ * refund fallback promptly, not retry indefinitely.
+ */
 async function invokeAsAdmin(method, scValArgs) {
-  const srv = getServer();
-  const admin = getAdminKeypair();
-  const account = await srv.getAccount(admin.publicKey());
-  const contract = new Contract(config.contractId);
+  return withRetry(
+    async () => {
+      const srv = getServer();
+      const admin = getAdminKeypair();
+      const account = await srv.getAccount(admin.publicKey());
+      const contract = new Contract(config.contractId);
 
-  const tx = new TransactionBuilder(account, { fee: '1000000', networkPassphrase: config.networkPassphrase })
-    .addOperation(contract.call(method, ...scValArgs))
-    .setTimeout(60)
-    .build();
+      const tx = new TransactionBuilder(account, { fee: '1000000', networkPassphrase: config.networkPassphrase })
+        .addOperation(contract.call(method, ...scValArgs))
+        .setTimeout(60)
+        .build();
 
-  const prepared = await srv.prepareTransaction(tx);
-  prepared.sign(admin);
+      const prepared = await srv.prepareTransaction(tx);
+      prepared.sign(admin);
 
-  const sendResult = await srv.sendTransaction(prepared);
-  if (sendResult.status === 'ERROR') {
-    throw new Error(`submit failed for ${method}: ${JSON.stringify(sendResult.errorResult ?? sendResult)}`);
-  }
+      const sendResult = await srv.sendTransaction(prepared);
+      if (sendResult.status === 'ERROR') {
+        throw new Error(`submit failed for ${method}: ${JSON.stringify(sendResult.errorResult ?? sendResult)}`);
+      }
 
-  const finalResult = await srv.pollTransaction(sendResult.hash);
-  if (finalResult.status !== 'SUCCESS') {
-    throw new Error(`${method} transaction ${sendResult.hash} did not succeed: ${finalResult.status}`);
-  }
-  return { hash: sendResult.hash, result: finalResult };
+      const finalResult = await srv.pollTransaction(sendResult.hash);
+      if (finalResult.status !== 'SUCCESS') {
+        throw new Error(`${method} transaction ${sendResult.hash} did not succeed: ${finalResult.status}`);
+      }
+      return { hash: sendResult.hash, result: finalResult };
+    },
+    { attempts: 2, timeoutMs: 10_000, baseDelayMs: 300, label: `invokeAsAdmin(${method})` },
+  );
 }
 
 export async function resolveQuestion(questionId, matchingWorkerAddresses, losingWorkerAddresses = []) {
@@ -81,25 +100,30 @@ function decodeStatus(raw) {
 }
 
 async function simulateReadOnly(method, scValArgs = []) {
-  const srv = getServer();
-  const contract = new Contract(config.contractId);
-  // Simulation-only calls need a source account for a well-formed envelope
-  // but never actually sign or submit, so any funded-looking public key works.
-  const simSourceKey = config.platformAddress || Keypair.random().publicKey();
-  const simSource = new Account(simSourceKey, '0');
+  return withRetry(
+    async () => {
+      const srv = getServer();
+      const contract = new Contract(config.contractId);
+      // Simulation-only calls need a source account for a well-formed envelope
+      // but never actually sign or submit, so any funded-looking public key works.
+      const simSourceKey = config.platformAddress || Keypair.random().publicKey();
+      const simSource = new Account(simSourceKey, '0');
 
-  const tx = new TransactionBuilder(simSource, { fee: '100', networkPassphrase: config.networkPassphrase })
-    .addOperation(contract.call(method, ...scValArgs))
-    .setTimeout(30)
-    .build();
+      const tx = new TransactionBuilder(simSource, { fee: '100', networkPassphrase: config.networkPassphrase })
+        .addOperation(contract.call(method, ...scValArgs))
+        .setTimeout(30)
+        .build();
 
-  const sim = await srv.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) {
-    if (/QuestionNotFound|Error\(Contract, #5\)/.test(sim.error ?? '')) return null;
-    throw new Error(`simulation of ${method} failed: ${sim.error}`);
-  }
-  if (!sim.result?.retval) return null;
-  return scValToNative(sim.result.retval);
+      const sim = await srv.simulateTransaction(tx);
+      if (rpc.Api.isSimulationError(sim)) {
+        if (/QuestionNotFound|Error\(Contract, #5\)/.test(sim.error ?? '')) return null;
+        throw new Error(`simulation of ${method} failed: ${sim.error}`);
+      }
+      if (!sim.result?.retval) return null;
+      return scValToNative(sim.result.retval);
+    },
+    { attempts: 2, timeoutMs: 5_000, baseDelayMs: 200, label: `simulateReadOnly(${method})` },
+  );
 }
 
 /** Zero-fee simulated read — checks payment state without needing a signature. */

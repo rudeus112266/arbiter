@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import { store } from './store.js';
 import { config } from './config.js';
+import { logger } from './logger.js';
 
 /**
  * Web Push for workers who aren't currently on the page. This is a
@@ -90,7 +91,7 @@ export async function notifyWorker(workerId, payload) {
       // Expected lifecycle event (browser data cleared, uninstalled, etc.) — not an error.
       await removeSubscription(workerId);
     } else {
-      console.error(`[push] failed to notify ${workerId}:`, err.message);
+      logger.error({ err, workerId, questionId: payload?.questionId }, 'failed to notify worker via push');
     }
     return false;
   }
