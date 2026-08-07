@@ -1,0 +1,16 @@
+{
+  "name": "arbiter-demo-agent",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ask": "node ask.js",
+    "worker": "node worker-sim.js",
+    "sponsored-demo": "node sponsored-demo.js",
+    "check": "node --check ask.js sandbox-ask.js worker-sim.js sponsored-demo.js lib/stellar.js"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.1.0",
+    "dotenv": "^16.4.5"
+  }
+}

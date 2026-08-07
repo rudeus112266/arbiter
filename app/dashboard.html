@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Buyer Dashboard</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">buyer dashboard</span></h1>
+        <p class="sub">
+          See every question you've paid for — read-only, keyed by your own wallet address. No
+          account, no signup: connect the same way you would to answer questions.
+          <a href="/index.html">Worker console →</a>
+        </p>
+      </header>
+
+      <section id="panel-connect" class="panel">
+        <button id="btn-connect">Connect wallet</button>
+        <button id="btn-quick-start" class="secondary">Quick start (no extension needed)</button>
+      </section>
+
+      <section id="panel-dashboard" class="panel hidden">
+        <div class="row">
+          <div>
+            <strong id="payer-address"></strong>
+            <div class="muted small">connected</div>
+          </div>
+          <button id="btn-refresh" class="secondary">Refresh</button>
+        </div>
+
+        <div class="dashboard-stats">
+          <div>
+            <div class="muted small">Total spent</div>
+            <strong id="stat-spend">0.00 USDC</strong>
+          </div>
+          <div>
+            <div class="muted small">Questions tracked</div>
+            <strong id="stat-count">0</strong>
+          </div>
+          <div>
+            <div class="muted small">Success rate</div>
+            <strong id="stat-success">—</strong>
+          </div>
+        </div>
+
+        <ul id="question-list" class="question-list">
+          <li class="muted small" id="question-list-empty">No questions yet.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Activity log</h2>
+        <ul id="log"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/src/dashboard.js"></script>
+  </body>
+</html>

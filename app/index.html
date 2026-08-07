@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Worker Console</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#5b4cf0" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">worker console</span></h1>
+        <p class="sub">
+          Answer paid questions, get settled on-chain automatically.
+          <a href="/dashboard.html">Buyer dashboard →</a>
+        </p>
+      </header>
+
+      <section id="panel-connect" class="panel">
+        <button id="btn-connect">Connect wallet</button>
+        <button id="btn-quick-start" class="secondary">Quick start (no extension needed)</button>
+        <p class="muted small">
+          Quick start generates a wallet in this browser — non-custodial (only you hold the key,
+          it's just stored locally instead of in an extension), zero setup, zero XLM required.
+        </p>
+      </section>
+
+      <section id="panel-backup" class="panel hidden warning">
+        <h2>⚠ Back up your quick-start key</h2>
+        <p>
+          This wallet lives only in this browser. If you clear your browser data, use private
+          browsing, or switch devices, <strong>any staked or accrued USDC on this address is
+          permanently unrecoverable</strong> — there is no password reset and no support line
+          that can get it back. Copy your secret key somewhere safe (a password manager is ideal)
+          before you stake anything or let earnings accrue.
+        </p>
+        <div class="row">
+          <input id="backup-secret" type="password" readonly value="" />
+          <button id="btn-reveal-secret" class="secondary" type="button">Reveal</button>
+          <button id="btn-copy-secret" type="button">Copy</button>
+        </div>
+        <p class="muted small" id="backup-copy-status"></p>
+      </section>
+
+      <section id="panel-onboard" class="panel hidden">
+        <h2>One more step</h2>
+        <p>Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
+        <button id="btn-onboard">Onboard (sponsored, free)</button>
+      </section>
+
+      <section id="panel-online" class="panel hidden">
+        <div class="row">
+          <div>
+            <strong id="worker-address"></strong>
+            <div class="muted" id="worker-status">offline</div>
+          </div>
+          <button id="btn-toggle">Go online</button>
+        </div>
+
+        <fieldset id="category-picker">
+          <legend>Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
+          <label><input type="checkbox" value="math" /> Math</label>
+          <label><input type="checkbox" value="coding" /> Coding</label>
+          <label><input type="checkbox" value="history" /> History</label>
+          <label><input type="checkbox" value="general" /> General knowledge</label>
+        </fieldset>
+
+        <div class="push-row">
+          <div>
+            <div class="muted small">Push notifications</div>
+            <p id="push-status" class="muted small">Off — you'll only get questions while this tab is open.</p>
+          </div>
+          <button id="btn-enable-push" class="secondary" type="button">Enable</button>
+        </div>
+        <p class="muted small">
+          Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
+          slow for the fastest tier. It supplements the tab, it doesn't replace it.
+        </p>
+      </section>
+
+      <section id="panel-earnings" class="panel hidden">
+        <h2>Earnings &amp; stake</h2>
+
+        <div class="row">
+          <div>
+            <div class="muted small">Accrued (withdrawable)</div>
+            <strong id="owed-amount">0.00 USDC</strong>
+          </div>
+          <button id="btn-withdraw">Withdraw</button>
+        </div>
+
+        <div class="row" style="margin-top: 0.75rem">
+          <div>
+            <div class="muted small">Staked bond</div>
+            <strong id="stake-amount">0.00 USDC</strong>
+          </div>
+          <form id="stake-form" class="inline-form">
+            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" />
+            <button id="btn-stake" type="submit">Stake</button>
+          </form>
+        </div>
+        <p class="muted small">
+          Staking is optional — it's a credibility bond. Answers that lose a quorum vote forfeit a
+          small slice of stake to the platform; workers who never stake are never slashed.
+        </p>
+
+        <div class="track-record" id="track-record">
+          <div class="muted small">Your track record</div>
+          <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
+        </div>
+      </section>
+
+      <section id="panel-question" class="panel hidden">
+        <h2>Incoming question</h2>
+        <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
+        <p id="question-text"></p>
+        <form id="answer-form">
+          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
+          <button id="btn-answer" type="submit">Submit answer</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Activity log</h2>
+        <ul id="log"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "arbiter-app",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node --check src/main.js"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.7.5",
+    "@stellar/stellar-sdk": "^13.1.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  },
+  "overrides": {
+    "protobufjs": "^8"
+  }
+}

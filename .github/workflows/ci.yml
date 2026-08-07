@@ -1,0 +1,80 @@
+name: CI
+
+# "No merge to main without tests passing" — every job here is a required
+# status check (configure branch protection on `main` to require them).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contract:
+    name: Contract (test + wasm build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test -p oracle-escrow
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+      - name: Build contract to WASM (proves it actually compiles for deployment, not just cargo test)
+        run: stellar contract build --package oracle-escrow
+
+  backend:
+    name: Backend (unit + integration tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm test
+        working-directory: backend
+      - name: Dependency audit (fails only on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+
+  app:
+    name: Frontend (build + audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - run: npm run build
+        working-directory: app
+      - name: Dependency audit (fails only on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: app
+
+  demo-agent:
+    name: Demo scripts (syntax check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: demo-agent/package-lock.json
+      - run: npm ci
+        working-directory: demo-agent
+      - run: npm run check
+        working-directory: demo-agent
+      - name: Dependency audit (fails only on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: demo-agent

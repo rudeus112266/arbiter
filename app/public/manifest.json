@@ -1,0 +1,11 @@
+{
+  "name": "Arbiter Worker Console",
+  "short_name": "Arbiter",
+  "description": "Answer paid questions, get settled on-chain automatically.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#14141f",
+  "theme_color": "#5b4cf0",
+  "icons": []
+}

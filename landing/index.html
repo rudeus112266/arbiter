@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbiter — Pay-per-question human-intelligence oracle on Stellar</title>
+  <meta name="description" content="Arbiter is a pay-per-question oracle API. Submit a question, pay in USDC, and a quorum of humans answers it — settled automatically on-chain, or fully refunded." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#top" class="logo">
+        <span class="logo-mark" aria-hidden="true"></span>
+        Arbiter
+      </a>
+
+      <button class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="primary-nav">
+        <span class="sr-only">Toggle navigation menu</span>
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+      </button>
+
+      <nav class="primary-nav" id="primary-nav" aria-label="Primary">
+        <ul>
+          <li><a href="#how-it-works">How it works</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#developers">Developers</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="https://github.com" class="nav-cta">Read the docs</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero" id="top" aria-labelledby="hero-heading">
+      <div class="container hero-grid">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">Human-intelligence oracle · Built on Stellar / Soroban</p>
+          <h1 id="hero-heading">Ask anything.<br />Pay only when it&nbsp;resolves.</h1>
+          <p class="hero-sub">
+            Arbiter is a pay-per-question oracle API. Submit a question, pay in USDC, and a live
+            quorum of humans answers it — settled automatically on-chain, or fully refunded if
+            consensus isn&rsquo;t reached. No stuck funds, no partial states.
+          </p>
+          <div class="hero-actions">
+            <a href="#try-it-now" class="btn btn-primary">Ask a question live</a>
+            <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
+          </div>
+          <ul class="hero-trust" aria-label="At a glance">
+            <li><strong>0.25 USDC</strong><span>starting price</span></li>
+            <li><strong>Fail-closed</strong><span>by design</span></li>
+            <li><strong>Zero XLM</strong><span>required to participate</span></li>
+          </ul>
+        </div>
+
+        <div class="hero-demo reveal">
+          <div class="terminal" aria-label="Example: requesting an answer">
+            <div class="terminal-bar">
+              <span class="dot dot-red" aria-hidden="true"></span><span class="dot dot-yellow" aria-hidden="true"></span><span class="dot dot-green" aria-hidden="true"></span>
+              <span class="terminal-title">oracle-request.sh</span>
+            </div>
+            <pre class="terminal-body" tabindex="0"><code><span class="tok-muted">$</span> curl -X POST https://api.arbiter.dev/oracle \
+    -d <span class="tok-string">'{"question":"What year did Stellar launch?"}'</span>
+
+<span class="tok-muted">&lt; HTTP/1.1</span> <span class="tok-status">402 Payment Required</span>
+<span class="tok-brace">{</span>
+  <span class="tok-key">"questionId"</span>: <span class="tok-string">"17285…"</span>,
+  <span class="tok-key">"amount"</span>: <span class="tok-string">"0.25"</span>,
+  <span class="tok-key">"asset"</span>: <span class="tok-brace">{</span> <span class="tok-key">"code"</span>: <span class="tok-string">"USDC"</span> <span class="tok-brace">}</span>,
+  <span class="tok-key">"instructions"</span>: <span class="tok-string">"submit() to pay,
+    then retry with X-Payment-Tx"</span>
+<span class="tok-brace">}</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRY IT NOW (sandbox — free, no wallet) -->
+    <section class="section try-it" id="try-it-now" aria-labelledby="try-it-heading">
+      <div class="container try-it-inner">
+        <div class="reveal">
+          <p class="eyebrow">Sandbox mode · Free · No wallet needed</p>
+          <h2 id="try-it-heading" class="section-heading">Ask a real question right now</h2>
+          <p class="section-sub">
+            This calls a real Arbiter backend's sandbox endpoint — no payment, no chain, no
+            signup. It's the fastest way to see the exact response shape you'd build against,
+            before you set up a wallet or spend a cent.
+          </p>
+        </div>
+
+        <form class="try-it-card reveal" id="try-it-form">
+          <label class="sr-only" for="try-it-input">Your question</label>
+          <input
+            id="try-it-input"
+            type="text"
+            maxlength="200"
+            placeholder="What year did Stellar launch?"
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-primary" id="try-it-submit">Ask</button>
+
+          <div class="try-it-result" id="try-it-result" role="status" aria-live="polite">
+            <p class="try-it-placeholder">Your answer will appear here.</p>
+          </div>
+
+          <p class="muted small">
+            Points at <code id="try-it-endpoint">http://localhost:4000</code> by default — run
+            the Arbiter backend locally to try this live. Sandbox responses are clearly labeled
+            and never touch real funds or a real chain.
+          </p>
+        </form>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section" id="how-it-works" aria-labelledby="how-heading">
+      <div class="container">
+        <h2 id="how-heading" class="section-heading reveal">How it works</h2>
+        <ol class="steps">
+          <li class="step reveal">
+            <span class="step-index">01</span>
+            <h3>Ask</h3>
+            <p><code>POST</code> your question to <code>/oracle</code>. No API key, no signup —
+              just a question.</p>
+          </li>
+          <li class="step reveal">
+            <span class="step-index">02</span>
+            <h3>Pay</h3>
+            <p>Submit USDC on Stellar to escrow, or use the sponsored zero-XLM flow — the
+              platform covers your network fee.</p>
+          </li>
+          <li class="step reveal">
+            <span class="step-index">03</span>
+            <h3>Answer</h3>
+            <p>A live quorum of online workers gets your question over a real-time channel and
+              races to answer it.</p>
+          </li>
+          <li class="step reveal">
+            <span class="step-index">04</span>
+            <h3>Settle</h3>
+            <p>Answers are reconciled into one consensus. Paid out automatically on-chain — or
+              fully refunded, never partially.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="section section-alt" id="features" aria-labelledby="features-heading">
+      <div class="container">
+        <h2 id="features-heading" class="section-heading reveal">Why Arbiter</h2>
+        <p class="section-sub reveal">Every guarantee below is enforced by the smart contract
+          itself, not a policy we promise to follow.</p>
+
+        <div class="feature-grid">
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9.5 12l1.8 1.8L14.5 10"/></svg>
+            <h3>Fail-closed by design</h3>
+            <p>Every code path ends in an on-chain <code>resolve()</code> or <code>refund()</code>.
+              There is no stuck or partially-settled state.</p>
+          </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 10.6L15.4 7.4M8.6 13.4L15.4 16.6"/></svg>
+            <h3>On-chain settlement</h3>
+            <p>Funds sit in a Soroban escrow contract, never a custodial backend. Payouts and
+              refunds are real transactions you can verify yourself.</p>
+          </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9"/><path d="M15 7h5v5"/></svg>
+            <h3>Surge-aware pricing</h3>
+            <p>Price reflects live worker supply, not a fixed sticker — and it&rsquo;s locked in
+              at quote time, so it can never move on you mid-flow.</p>
+          </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9 12.5l2 2 4-4.5"/></svg>
+            <h3>Staked worker reputation</h3>
+            <p>Workers can post a USDC bond as a credibility signal. Answers that lose a
+              quorum vote forfeit a slice of it — automatically, on-chain.</p>
+          </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
+            <h3>Zero-XLM onboarding</h3>
+            <p>Account creation and network fees are sponsored. Ask or answer questions without
+              ever holding a stroop of XLM.</p>
+          </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+            <h3>Permissionless refund escape hatch</h3>
+            <p>If the backend ever goes dark, anyone can force a refund after a timeout window —
+              directly on the contract, no cooperation required.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEVELOPERS -->
+    <section class="section" id="developers" aria-labelledby="dev-heading">
+      <div class="container dev-grid">
+        <div class="reveal">
+          <h2 id="dev-heading" class="section-heading">Built for developers</h2>
+          <p class="section-sub">Poll one endpoint. Get a typed, reconciled answer back — or a
+            clean refund reason if consensus couldn&rsquo;t be reached.</p>
+          <ul class="dev-list">
+            <li>Async job model — no long-held HTTP connections</li>
+            <li>Three pricing tiers trading price for speed and quorum size</li>
+            <li>Confidence score and reconciliation method on every response</li>
+          </ul>
+        </div>
+
+        <div class="terminal reveal" aria-label="Example: polling for a result">
+          <div class="terminal-bar">
+            <span class="dot dot-red" aria-hidden="true"></span><span class="dot dot-yellow" aria-hidden="true"></span><span class="dot dot-green" aria-hidden="true"></span>
+            <span class="terminal-title">poll-result.sh</span>
+          </div>
+          <pre class="terminal-body" tabindex="0"><code><span class="tok-muted">$</span> curl https://api.arbiter.dev/oracle/17285…
+
+<span class="tok-muted">&lt; HTTP/1.1</span> <span class="tok-status">200 OK</span>
+<span class="tok-brace">{</span>
+  <span class="tok-key">"status"</span>: <span class="tok-string">"settled"</span>,
+  <span class="tok-key">"outcome"</span>: <span class="tok-string">"resolved"</span>,
+  <span class="tok-key">"answer"</span>: <span class="tok-string">"2015"</span>,
+  <span class="tok-key">"confidence"</span>: 1,
+  <span class="tok-key">"payoutTx"</span>: <span class="tok-string">"a1b2c3…"</span>
+<span class="tok-brace">}</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
+      <div class="container">
+        <h2 id="pricing-heading" class="section-heading reveal">Pricing</h2>
+        <p class="section-sub reveal">Pick a tier per question. Price scales with live worker
+          supply and is always quoted before you pay.</p>
+
+        <div class="pricing-grid">
+          <article class="price-card reveal">
+            <h3>Standard</h3>
+            <p class="price">0.25 <span>USDC</span></p>
+            <ul>
+              <li>Quorum of 3 workers</li>
+              <li>45s answer window</li>
+              <li>Good default for most questions</li>
+            </ul>
+          </article>
+
+          <article class="price-card price-card-featured reveal">
+            <p class="price-badge">Most popular</p>
+            <h3>Express</h3>
+            <p class="price">0.40 <span>USDC</span></p>
+            <ul>
+              <li>Quorum of 2 workers</li>
+              <li>12s answer window</li>
+              <li>For latency-sensitive calls</li>
+            </ul>
+          </article>
+
+          <article class="price-card reveal">
+            <h3>Priority</h3>
+            <p class="price">0.60 <span>USDC</span></p>
+            <ul>
+              <li>Quorum of 5 workers</li>
+              <li>30s answer window</li>
+              <li>Highest-confidence consensus</li>
+            </ul>
+          </article>
+        </div>
+        <p class="pricing-note reveal">Base prices shown. A live surge multiplier applies when
+          worker supply is scarce, capped at 2× and locked at quote time.</p>
+      </div>
+    </section>
+
+    <!-- FOR WORKERS -->
+    <section class="worker-band" aria-labelledby="worker-heading">
+      <div class="container worker-band-inner reveal">
+        <div>
+          <h2 id="worker-heading">Answer questions. Get paid in USDC.</h2>
+          <p>Go online, answer what you know, get settled on-chain automatically.</p>
+        </div>
+        <a href="#" class="btn btn-secondary btn-on-dark">Start earning</a>
+      </div>
+    </section>
+
+    <!-- TRUST / TECHNICAL CREDIBILITY -->
+    <section class="section trust-strip" aria-labelledby="trust-heading">
+      <div class="container">
+        <h2 id="trust-heading" class="sr-only">Technical credibility</h2>
+        <ul class="trust-grid reveal">
+          <li><strong>38</strong><span>contract tests passing</span></li>
+          <li><strong>44</strong><span>backend tests passing</span></li>
+          <li><strong>100%</strong><span>fail-closed settlement paths</span></li>
+          <li><strong>Open</strong><span>architecture, verifiable on-chain</span></li>
+        </ul>
+        <p class="trust-live" id="trust-live" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq" aria-labelledby="faq-heading">
+      <div class="container faq-container">
+        <h2 id="faq-heading" class="section-heading reveal">Frequently asked</h2>
+
+        <div class="faq-list reveal">
+          <details class="faq-item">
+            <summary>What happens if workers disagree?</summary>
+            <p>Answers are reconciled by an LLM tolerant of paraphrasing, with a deterministic
+              fallback if that call ever fails. If confidence stays below threshold, the full
+              payment is refunded — never split or estimated.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>How fast is settlement?</summary>
+            <p>Once a quorum of workers has answered, reconciliation and on-chain settlement
+              typically complete in seconds. You poll one job endpoint until it reports
+              <code>settled</code>.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>What if the backend goes down?</summary>
+            <p>Every pending question carries a timeout window after which <em>anyone</em> — not
+              just Arbiter — can force a full refund directly on the contract. Your funds are
+              never dependent on our infrastructure staying up.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>Do I need to hold XLM?</summary>
+            <p>No. Account creation and network fees are sponsored for both payers and workers.
+              You only ever need USDC.</p>
+          </details>
+
+          <details class="faq-item">
+            <summary>What network does Arbiter run on?</summary>
+            <p>Arbiter is built and tested on Stellar Testnet today. Mainnet deployment follows
+              an independent contract audit.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="final-cta" aria-labelledby="final-cta-heading">
+      <div class="container reveal">
+        <h2 id="final-cta-heading">Ask your first question in under a minute.</h2>
+        <div class="hero-actions center">
+          <a href="#developers" class="btn btn-primary">Ask a question live</a>
+          <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <a href="#top" class="logo">
+        <span class="logo-mark" aria-hidden="true"></span>
+        Arbiter
+      </a>
+      <nav aria-label="Footer">
+        <ul>
+          <li><a href="https://github.com">Docs</a></li>
+          <li><a href="https://github.com">GitHub</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ul>
+      </nav>
+      <p class="footer-note">Testnet build. Not audited. Not financial advice.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
