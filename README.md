@@ -13,12 +13,14 @@ payment is refunded if consensus can't be reached. The system is designed to
 permissionless timeout refund guarantees payers are never permanently stuck.
 
 This is a reengineered build of the original StellarSage spec, built across
-five rounds — five workflow improvements, four more aimed at friction and
+six rounds — five workflow improvements, four more aimed at friction and
 unit economics, thirteen fixes from a structured pressure test, five more
-starting from actual customer journeys and working backward to the tech,
-and a final pass converting a written production-readiness checklist into
-six real fixes — each integrated end-to-end (contract → backend → frontend
-→ demo tooling → landing page → CI), not just described.
+starting from actual customer journeys and working backward to the tech, a
+pass converting a written production-readiness checklist into six real
+fixes, and finally an actual live deployment to Stellar testnet that found
+two more real bugs no amount of mocked testing had caught — each integrated
+end-to-end (contract → backend → frontend → demo tooling → landing page →
+CI → a real chain), not just described.
 
 ## What changed, and why
 
@@ -408,6 +410,91 @@ explicitly rather than silently pretended away). All six are fixed below.
   retry actually fires, is logged with full correlation, and the whole
   request still resolves in ~200ms, not a hang.
 
+## Round 6 — an actual live deployment, and what it broke
+
+Every round before this one was verified locally, against mocked or
+sandboxed data, or (for the demo scripts) never actually run. This round
+deployed for real: a fresh contract on Stellar testnet, a self-issued test
+USDC asset wrapped as a Stellar Asset Contract (the real testnet USDC
+issuer's key isn't something this project controls, so a self-issued
+stand-in was the honest choice — clearly not the same as Circle-issued
+testnet USDC), then all three demo scripts (`ask.js`, `worker-sim.js`,
+`sponsored-demo.js`) run against it with real workers answering. It's the
+single highest-leverage thing this project could still do, because it's
+the one path every other round could only claim to have gotten right —
+this round actually proved it, and in the process found two real bugs that
+113 passing tests never could, because none of them ever touched real
+infrastructure.
+
+**Two real bugs, both fixed:**
+
+- **`@stellar/stellar-sdk` was three major versions stale** (13.3.0
+  installed, 16.2.0 current) across `backend/`, `app/`, and `demo-agent/`.
+  Symptom: `TypeError: Bad union switch: 4` — the old SDK's XDR parser
+  couldn't decode a real `getTransaction`/`simulateTransaction` response
+  from current testnet infrastructure. Every RPC-touching test in this
+  repo used mocked or hand-constructed data, so this was invisible until
+  an actual `submit()`/`resolve()`/`refund()` call hit the real network.
+  Upgraded all three packages; 113 backend tests and the app build both
+  still pass unchanged, and the app's bundle size dropped as a side effect.
+- **`decodeStatus()` assumed the wrong shape for a data-less Rust enum.**
+  `Status::Pending` decodes via `scValToNative` as the array `['Pending']`,
+  not the plain-object shape (`{ pending: true }`) the function assumed —
+  confirmed directly against a real deployed contract's live response, not
+  documentation. The old code silently produced `"0"` (an array's
+  stringified numeric index) instead of `"pending"`, which meant
+  `verifyPayment()` rejected every real, successfully-landed payment with
+  "question is 0 on-chain, expected pending." A real, first-ever payment
+  actually got stuck on this before the fix landed — recovered by
+  fixing the bug and asking a fresh question, since the stuck one's
+  in-memory stash was gone after the backend restart anyway; it will
+  auto-refund via `refund_timeout()` after its timeout window like the
+  fail-safe is designed to. `decodeStatus` is now exported and has 4
+  dedicated regression tests covering the real shape, the old assumed
+  shapes (kept as defensive fallbacks), and "never throws."
+
+**One thing that isn't a bug, observed three separate times:** public
+testnet RPC infrastructure has real read-after-write lag — a transaction
+that just landed (confirmed via `pollTransaction` and a real explorer
+link) isn't always immediately visible to the *next* simulate/read call,
+if it happens to hit a different RPC node. Hit this during contract
+`initialize()`, during payment verification, and during a `withdraw()`
+balance check — every time, waiting a few seconds and retrying showed the
+correct, already-settled state. Round 5's retry/timeout work already
+covers exactly this (`retry.js`, 2 attempts with backoff on every Soroban
+RPC call), but it's worth naming explicitly: this is a real operational
+characteristic of the network this system settles on, not a hypothetical
+one architecture docs mention and nobody actually sees.
+
+**What actually ran, for real, on Stellar testnet:**
+
+- A full `ask.js` question — 402 with live surge pricing (1.78x, only 3
+  workers online), a real `submit()` payment, dispatch to 3 real
+  session-authenticated workers (`worker-sim.js` with `WORKER_SECRET`,
+  proving round 5's impersonation fix works outside a test harness too),
+  reconciliation, and a real `resolve()` — verified independently via
+  `get_question`/`get_owed` reads, not just trusted from the API response:
+  each matching worker was credited exactly 1,186,666 stroops, the hand-computed
+  20/80 split on a 4,450,000-stroop payment down to the last dust stroop.
+- A real sponsored `withdraw()` — the same worker's account didn't exist
+  on-chain yet (sponsored onboarding creates it), so onboarding ran first,
+  then a real fee-bumped `withdraw()` landed real USDC (0.1186666) in a
+  wallet that has never held a stroop of XLM, and `get_owed` for that
+  worker read back `0` once the read-after-write lag above cleared.
+- A full `sponsored-demo.js` run, start to finish, on the first attempt:
+  brand-new keypair → sponsored account + trustline → funded with test
+  USDC by a separate funder (who pays their own fee) → sponsored fee-bumped
+  payment → dispatched to the same live workers → resolved on-chain → final
+  balance check confirms **exactly 0 XLM**, the zero-XLM invariant proven
+  against real infrastructure, not just asserted in a unit test.
+
+Every transaction above has a real `stellar.expert/explorer/testnet/tx/...`
+link printed by the script that ran it. The deployed contract id, the test
+USDC SAC id, and the platform/payer keys used for this run live only in
+`backend/.env`/`demo-agent/.env` (gitignored, never committed) — this is a
+disposable testnet deployment, not a persistent environment this repo
+depends on.
+
 ## Architecture
 
 ```
@@ -507,14 +594,7 @@ Verified in this environment:
   single payout), admin rotation, the timeout-snapshot regression test
   (proving `set_timeout_ledgers()` can't retroactively extend a pending
   question's deadline), and worker-list overlap/duplicate rejection.
-  **Correction to earlier rounds' notes**: this environment does have the
-  `stellar` CLI (found while building round 5's CI workflow) — the
-  contract builds to real, deployable WASM (`stellar contract build`,
-  15.5KB optimized, all 14 exported functions present and correctly
-  named). Earlier claims that no WASM build was possible here were wrong;
-  only an actual testnet *deployment* remains genuinely unverified (needs
-  a funded account and network access this environment doesn't have).
-- Backend: all 109 unit + integration tests pass, including sandbox mode
+- Backend: all 113 unit + integration tests pass, including sandbox mode
   (deterministic outcome-simulation for all three modes, isolation from
   real `/stats` counters proven directly, not just asserted), push
   notification subscription CRUD and category-eligibility filtering
@@ -522,9 +602,10 @@ Verified in this environment:
   endpoint), `payerIndex.js`'s aggregation math, worker session
   auth (10 unit + 5 HTTP tests, including a real impersonation attempt
   rejected), idempotency (`claimJob()` proven under actual concurrent
-  load, not just sequential calls), and the retry/backoff module (a real
+  load, not just sequential calls), the retry/backoff module (a real
   concurrent race, backoff-timing verification, and a live test against
-  an actual Soroban RPC endpoint).
+  an actual Soroban RPC endpoint), and `decodeStatus()`'s real-shape
+  regression coverage from round 6.
 - Frontend: `vite build` succeeds for the now-multi-page app (worker
   console + buyer dashboard sharing a code-split vendor chunk) and for the
   landing page.
@@ -537,25 +618,32 @@ Verified in this environment:
   lacks the API key real Google Chrome has for reaching its push service) —
   confirmed to be environment properties, not bugs, by reproducing both
   with distinct, expected error messages.
+- **Live, on real Stellar testnet (round 6)**: contract deployment and
+  `initialize()`; a full paid question end to end (`submit()` →
+  surge-priced 402 → dispatch to real session-authenticated workers →
+  reconciliation → `resolve()`), independently verified via `get_question`
+  and `get_owed` reads (not just trusted from the API response) down to
+  the exact expected dust-splitting stroop; a real sponsored `withdraw()`
+  landing real USDC in a zero-XLM wallet; and a complete
+  `sponsored-demo.js` run proving the zero-XLM invariant against real
+  infrastructure, first attempt, balance-checked at `0` afterward. See
+  "Round 6" above for the two real bugs this found and fixed.
 - All `stellarClient.js`/`sponsor.js` calls (including all three fee-bump
   security checks' byte-for-byte XDR comparisons) were validated against the
   actually installed `@stellar/stellar-sdk`, not just written from memory —
   e.g. `StrKey.encodeContract()` was used to mint a valid fake contract id
   so the security-check tests could run without a live deployment.
 
-Not verified here, because this environment has no deployed contract, no
-funded testnet account, and no Redis instance (the `stellar` CLI itself
-IS available — see the WASM-build correction above):
-- An actual testnet deployment and `initialize()` call.
-- The full `/oracle` → payment → dispatch → reconcile → settle path end to end
-  against a live chain (`oracle.js`'s chain-touching branches are exercised
-  by unit tests only up to the point where a real RPC call would be made) —
-  sandbox mode's parallel path IS fully verified live, precisely because it
-  was built not to need a chain.
-- Redis-backed `store.js` (the in-memory fallback path is what's been run).
+Not verified here:
+- Redis-backed `store.js` (the in-memory fallback path is what's been run;
+  no Redis instance in this environment). Multi-instance/pub-sub behavior
+  is therefore still unverified even though single-instance live settlement
+  now is.
 - Real push notification *delivery* (subscribe mechanics are verified; an
   actual server → push service → device round trip needs real Chrome with a
   Google API key, which this environment doesn't have).
+- Mainnet — everything above is testnet-only, by design and by config
+  default.
 - A real headless-browser wallet-connect *extension* click-through (`e2e/`
   is stubbed; the local quick-start wallet path IS covered live since it
   needs no extension).

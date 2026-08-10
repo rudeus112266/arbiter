@@ -10,7 +10,7 @@
     "check": "node --check ask.js sandbox-ask.js worker-sim.js sponsored-demo.js lib/stellar.js"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.1.0",
+    "@stellar/stellar-sdk": "^16.2.0",
     "dotenv": "^16.4.5"
   }
 }

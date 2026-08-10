@@ -92,8 +92,17 @@ export async function refundQuestion(questionId) {
   return invokeAsAdmin('refund', [u64Arg(questionId)]);
 }
 
-function decodeStatus(raw) {
-  // A data-less Rust enum variant decodes to a single-key object, e.g. { pending: true }.
+export function decodeStatus(raw) {
+  // A data-less Rust enum variant (Status::Pending etc.) decodes via
+  // scValToNative as a single-element ARRAY, e.g. ['Pending'] — confirmed
+  // against a real deployed contract's live RPC response (soroban-sdk 23 /
+  // @stellar/stellar-sdk 16), not assumed from memory. This was a genuine
+  // bug: the previous version here assumed a plain-object shape that never
+  // matched real output, so onChain.status silently decoded to "0" (an
+  // array's stringified numeric key) instead of "pending" — invisible to
+  // every test in this repo because none of them decode a *real*
+  // simulateTransaction response, only mocked ones.
+  if (Array.isArray(raw)) return String(raw[0]).toLowerCase();
   if (typeof raw === 'string') return raw.toLowerCase();
   if (raw && typeof raw === 'object') return Object.keys(raw)[0]?.toLowerCase();
   return String(raw).toLowerCase();
