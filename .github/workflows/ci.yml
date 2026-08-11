@@ -20,10 +20,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
         run: cargo test -p oracle-escrow
-      - name: Install system dependencies for stellar-cli
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        # Building from source (cargo install) pulls in the CLI's optional
+        # hardware-wallet support (dbus, then libudev/hidapi — each fix
+        # revealed the next missing system lib) and takes 10+ minutes. The
+        # prebuilt .deb sidesteps the whole class of problem and is fast.
+        # Pinned to the version this project was built/tested against.
+        run: |
+          curl -LO https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli_27.1.0_amd64.deb
+          sudo dpkg -i stellar-cli_27.1.0_amd64.deb || sudo apt-get install -f -y
       - name: Build contract to WASM (proves it actually compiles for deployment, not just cargo test)
         run: stellar contract build --package oracle-escrow
 
