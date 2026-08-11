@@ -20,8 +20,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
         run: cargo test -p oracle-escrow
+      - name: Install system dependencies for stellar-cli
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --features opt
+        run: cargo install --locked stellar-cli
       - name: Build contract to WASM (proves it actually compiles for deployment, not just cargo test)
         run: stellar contract build --package oracle-escrow
 
@@ -53,7 +55,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - run: npm ci
+      # npm ci here (not npm install): the wallet-kit dependency tree pulls in
+      # several native/optional modules (usb, secp256k1, utf-8-validate, etc.)
+      # whose platform-conditional lockfile entries didn't stay in sync
+      # between local generation and the Linux CI runner — npm ci enforces an
+      # exact match and failed on it in practice; npm install tolerates it.
+      - run: npm install --no-audit --no-fund
         working-directory: app
       - run: npm run build
         working-directory: app
