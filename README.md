@@ -22,6 +22,14 @@ two more real bugs no amount of mocked testing had caught — each integrated
 end-to-end (contract → backend → frontend → demo tooling → landing page →
 CI → a real chain), not just described.
 
+This monorepo remains the canonical source of that history. The code itself
+now also ships as three standalone repos with independent CI and release
+lifecycles: [arbiter-contract](https://github.com/Arbiter-xyz/arbiter-contract),
+[arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend), and
+[arbiter-app](https://github.com/Arbiter-xyz/arbiter-app) (worker console,
+buyer dashboard, landing page, demo scripts). Each is a fresh single commit,
+not a history-preserving split.
+
 ## What changed, and why
 
 **1. Async job-based `/oracle` instead of a blocking HTTP request**

@@ -12,8 +12,9 @@ jobs:
   contract:
     name: Contract (test + wasm build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
@@ -35,9 +36,14 @@ jobs:
   backend:
     name: Backend (unit + integration tests)
     runs-on: ubuntu-latest
+    # A hung integration test (server.test.js spawns real child processes)
+    # once ran to GitHub's default 6-hour job timeout undetected. This caps
+    # the blast radius; --test-timeout in package.json bounds individual
+    # tests so a hang fails fast instead of reaching this ceiling at all.
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -53,9 +59,10 @@ jobs:
   app:
     name: Frontend (build + audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -76,9 +83,10 @@ jobs:
   demo-agent:
     name: Demo scripts (syntax check)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
