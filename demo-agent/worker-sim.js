@@ -1,6 +1,24 @@
 import 'dotenv/config';
+import { Agent } from 'undici';
 import { Keypair, Transaction } from '@stellar/stellar-sdk';
 import { env, buildSignedStakeXdr, buildSignedWithdrawXdr, sleep } from './lib/stellar.js';
+
+/**
+ * The SSE connection (`GET /app/events`) is deliberately never fully
+ * consumed — that's the whole point of a dispatch channel, it stays open
+ * for the life of the process. Node's global fetch dispatcher pools
+ * connections per origin, and a real, reproduced bug against a real hosted
+ * deployment (Railway) showed that a permanently-open streaming GET can
+ * starve a same-origin POST issued later from the SAME process — the
+ * answer request never even reached the server, confirmed via server-side
+ * logs showing zero incoming requests for it, while the SSE stream stayed
+ * healthy. Giving the SSE connection its own isolated Agent (its own
+ * connection pool) means every other fetch() in this file — session,
+ * answer, stake, withdraw — keeps using the default dispatcher and can
+ * never be blocked behind it, regardless of how the origin's proxy
+ * layer handles long-lived streams.
+ */
+const sseAgent = new Agent();
 
 // If WORKER_SECRET is set, this worker signs with a real Stellar keypair
 // (its address becomes the workerId), which unlocks the optional
@@ -168,7 +186,7 @@ async function main() {
   if (token) qs.set('token', token);
 
   console.log(`[${workerId}] connecting to ${env.backendUrl}/app/events?${qs} …`);
-  const response = await fetch(`${env.backendUrl}/app/events?${qs.toString()}`);
+  const response = await fetch(`${env.backendUrl}/app/events?${qs.toString()}`, { dispatcher: sseAgent });
   if (!response.ok) throw new Error(`SSE connect failed: ${response.status}`);
 
   for await (const frame of sseFrames(response)) {

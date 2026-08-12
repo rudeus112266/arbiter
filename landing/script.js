@@ -112,20 +112,32 @@
 
   /* -------------------------------------------------------------------
      "Try it now" sandbox widget — a real call to a real Arbiter backend's
-     zero-payment sandbox endpoint. This is the single highest-leverage UX
-     fix for a prospective integrator: seeing one real response, with zero
-     wallet/testnet-USDC setup, before deciding whether to invest any more
-     time. Degrades honestly (not silently) if no backend is reachable —
-     this static page has no way to know whether one is running locally.
+     zero-payment sandbox endpoint, live in the hero itself rather than a
+     mockup or a link further down the page. This is the single
+     highest-leverage UX fix for a prospective integrator: seeing one real
+     response, with zero wallet/testnet-USDC setup, before scrolling past
+     the first screen. Degrades honestly (not silently) if no backend is
+     reachable — this static page has no way to know whether one is
+     running locally.
   ------------------------------------------------------------------- */
-  const API_BASE = "http://localhost:4000"; // point this at a real deployment's backend URL
+  const API_BASE = "https://arbiter-backend-production-4e43.up.railway.app";
 
   const tryItForm = document.getElementById("try-it-form");
   const tryItInput = document.getElementById("try-it-input");
   const tryItResult = document.getElementById("try-it-result");
   const tryItSubmit = document.getElementById("try-it-submit");
-  const tryItEndpoint = document.getElementById("try-it-endpoint");
-  if (tryItEndpoint) tryItEndpoint.textContent = API_BASE;
+
+  // The hero widget is already visible without scrolling on desktop (it
+  // sits beside the copy, not below it) — this only matters on mobile,
+  // where the two columns stack and "Ask a question live" needs to jump
+  // the visitor down to it and drop them straight into the input.
+  if (tryItInput) {
+    document.querySelectorAll('a[href="#try-it-input"]').forEach((link) => {
+      link.addEventListener("click", () => {
+        window.setTimeout(() => tryItInput.focus(), 400);
+      });
+    });
+  }
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));

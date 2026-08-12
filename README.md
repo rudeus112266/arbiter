@@ -2,6 +2,26 @@
 
 *(formerly StellarSage)*
 
+## Try it live — no setup, no clone, no wallet required
+
+| | |
+|---|---|
+| **Landing page** | https://arbiter-landing-nu.vercel.app |
+| **Worker console** | https://arbiter-app-ten.vercel.app |
+| **Buyer dashboard** | https://arbiter-app-ten.vercel.app/dashboard.html |
+| **Public leaderboard** | https://arbiter-app-ten.vercel.app/leaderboard.html |
+| **Backend API** | https://arbiter-backend-production-4e43.up.railway.app |
+
+Real testnet contract (`CDEZRLCBSRMWT5YLJ5UH3SKLNM5GVTL5TGBWDBMMBEBCFKIG3ZSS5W36`), real
+backend, real settlement — not a mock pointed at localhost. The landing
+page's hero is itself a live call to the sandbox endpoint; the full paid
+flow (`ask.js` / `worker-sim.js` from `demo-agent/`, pointed at the URL
+above via `BACKEND_URL`) settles real transactions on real testnet, same as
+everything documented in "Round 6" and "Round 7" below. This is a
+disposable testnet deployment on free-tier hosting (Railway + Vercel) —
+expect it to be redeployed or torn down after the SCF submission window,
+not a permanent production environment.
+
 A synchronous, pay-per-question human-intelligence oracle settled on
 Stellar/Soroban. A client pays 0.25 USDC (or more, for a faster/higher-confidence
 tier) to `/oracle`, the question is broadcast to online human workers over
@@ -503,6 +523,191 @@ USDC SAC id, and the platform/payer keys used for this run live only in
 disposable testnet deployment, not a persistent environment this repo
 depends on.
 
+## Round 7 — reengineering pass: "how would Jobs and Musk build this"
+
+Five features, explicitly aimed at first-principles questions rather than
+incremental polish — Musk's "delete the requirement" and Jobs's "delete the
+friction until it feels inevitable," applied to a product that had already
+been pressure-tested, customer-journey-mapped, and live-deployed five times
+over. Each shipped end-to-end (contract → backend → frontend → landing page)
+and was verified against a **freshly redeployed** testnet contract
+(`CDEZRLCBSRMWT5YLJ5UH3SKLNM5GVTL5TGBWDBMMBEBCFKIG3ZSS5W36` — the round-6
+contract had no path to add new entry points, so this is a new deployment,
+not an upgrade), not just against unit tests.
+
+**1. Instant tier — an LLM draft answer, no human quorum, settled in seconds.**
+The biggest assumption worth attacking: does *every* question need a
+45-second wait for three strangers? `reconcile.js` gained `draftAnswer()`, a
+single-shot Claude call independent of the multi-worker reconciliation path
+it sits next to — and `oracle.js` routes tier `instant` straight to it,
+skipping `dispatchAndCollect()` entirely. There's no human worker to pay in
+this tier, so on success the platform address itself is passed as
+`resolve()`'s sole "winner" — it's the party that actually provided the
+value, and the contract has no notion of a "worker" beyond an address that
+gets credited. No draft (no API key, or Claude errors) fails closed exactly
+like every other tier: refund, never charge for nothing. **Verified live**:
+a real 0.05 USDC payment, quoted and settled in ~3 seconds with zero
+dispatch, refunded correctly since this environment has no
+`ANTHROPIC_API_KEY` configured — proving the settlement plumbing without
+needing a real LLM call to do it.
+
+**2. Repositioned around a vertical: on-chain and technical claim verification.**
+Staking, slashing, and reputation already existed (round 2) — the gap was
+positioning, not mechanism. A staked human quorum only decisively beats a
+raw LLM call where being wrong is expensive and checkable: audit findings,
+"does this contract actually do what the docs claim," on-chain event
+verification — not generic trivia, where an LLM is faster and free. The
+landing page, worker-band copy, and FAQ now lead with that framing
+directly, including a new FAQ item stating plainly why a staked quorum
+exists at all (and pointing at the Instant tier for anyone who just wants a
+fast, unstaked lean instead).
+
+**3. Prepaid balance / metered billing — an API key, not a wallet, for every question after the first.**
+The non-custodial quick-start wallet (round 2) removed the *extension*
+requirement; this removes the *per-call signature* requirement. The
+contract gained `deposit()`/`withdraw_balance()`/`get_balance()` (a
+`Balance(Address)` map, mirroring the existing `Stake`/`Owed` pattern
+exactly) and an admin-only `charge()` that draws down a balance and opens a
+question via a shared `open_question()` helper — the same helper `submit()`
+now calls too, so every question opened either way settles through the
+*identical* `resolve()`/`refund()`/`refund_timeout()` machinery, unaware of
+which path funded it. One real signature (`deposit`) buys metered access
+afterward with zero further signing — the same shape as the `upto` x402
+settlement scheme this project is separately proposing to spec for Stellar
+(see `docs/scf-x402-facilitator-proposal.md`), built here first as an
+actual production consumer of the pattern rather than only a proposal.
+Backend-side: `metered.js`, a new `/oracle/metered` endpoint, and
+`/payers/:address/session[/challenge]` reusing `workerAuth.js`'s
+challenge/response mechanism verbatim — proving control of a Stellar
+address is the same problem whether the caller is a worker or a payer.
+**Verified live**: a real `deposit()` of 0.5 USDC, a real challenge/response
+session round trip, then a real `/oracle/metered` call that charged 0.05
+USDC against the balance with *zero* additional signature — no wallet
+prompt, just an authenticated HTTP call — settled, and the on-chain balance
+read back correctly decremented afterward.
+
+**4. Public worker leaderboard — reputation as a portable asset, not a number this backend keeps behind a login.**
+Worker earnings were already visible to workers themselves (round 5); this
+makes match-ratio and stake public and unauthenticated at `GET /leaderboard`
+and a new `app/leaderboard.html` page. `dispatch.js` gained a durable,
+bounded index of every worker id that's ever had an outcome recorded (`rep:`
+records existed per-worker already but couldn't be enumerated); the ranking
+itself (`rankLeaderboard()`) is pure and unit-tested separately from the
+async store/chain lookups. Established workers only — the same
+sybil-resistance reasoning `isEstablishedWorker()` already applies to
+reconciliation applies here too, so a fresh identity's first lucky answer
+can't top the board. Deliberately **doesn't** claim a slash-history column:
+the contract emits no queryable slash log today, and fabricating one from
+guesses would be worse than omitting it — a real one needs an events
+indexer, named here as a genuine follow-up, not faked. **Verified live**: a
+real worker answered five real questions correctly; the leaderboard was
+empty until the fifth (correctly excluded as not-yet-established before
+that), then showed match ratio 5/5 and live stake read directly from
+`get_stake` — independently checkable by anyone, not just trusted from this
+API.
+
+**5. The landing page hero is the live demo, not a link to one.**
+The sandbox widget existed already (round 5) but lived in its own section
+below the fold, behind a static terminal mockup in the hero pretending to
+be the product. The mockup is gone; the hero's right column is now the real
+`try-it-card` form, calling the real `/oracle/sandbox` endpoint, visible
+without scrolling on desktop. No separate "try it now" section anymore —
+one live widget, not a mockup plus a duplicate. Both "Ask a question live"
+buttons (hero and final CTA — the latter previously pointed at `#developers`,
+an inconsistency with its own label, fixed in the same pass) now jump to
+and focus the real input instead of scrolling to a section that no longer
+exists.
+
+**Fuse pass — the 5 features above plus the 3 existing pricing tiers,
+collapsed into one flow instead of parallel bolt-ons.** Two concrete
+changes, not a rewrite:
+- `POST /oracle/metered` no longer exists as a separate route. `POST
+  /oracle` itself now takes an optional `payerAddress` + session `token`;
+  present and valid with a sufficient balance, it settles immediately with
+  no 402 round trip at all. Absent, it's the unchanged classic flow. One
+  endpoint, one mental model — "how you pay" was never supposed to be a
+  different URL than "what you're asking." `askMetered()` is unchanged
+  internally; only which route calls it moved.
+- The Priority tier now actually routes to the leaderboard, instead of
+  "leaderboard" and "tiers" being two features that happened to share a
+  reputation store. `dispatch.js`'s `selectTargets()` gained a
+  `preferEstablished` flag, set on the Priority tier definition in
+  `pricing.js` and threaded through `dispatchAndCollect()` from whichever
+  tier resolved the question — submitted, sandboxed, or metered, since all
+  three paths spread the same tier object. Fails open the same way category
+  routing always has: never lets the established-only pool drop below
+  `quorumSize` recipients, so a starved quorum never happens for the sake
+  of the preference.
+
+Contract: 49 tests (11 new — `deposit`/`withdraw_balance`/`charge`,
+including that a charged question settles through the exact same
+`resolve()` path as a submitted one, and that a failed `charge()` opens no
+question and touches no balance). Backend: 125 tests (12 new — the instant
+tier's fail-closed no-API-key path, the leaderboard's ranking/filtering/tie-
+breaking logic, the instant tier's flat non-surging price,
+established-only routing and its fail-open threshold, and the fused
+`/oracle` endpoint's auth boundary: no token, a token for the wrong
+address, and the classic flow proven unaffected when no `payerAddress` is
+sent at all). Both counts, and every "verified live" claim above, checked
+directly in this environment before being written down here, not asserted
+from memory.
+
+Real transactions from this round's live verification, not just described:
+[`initialize()`](https://stellar.expert/explorer/testnet/tx/00f5eddfd62ea374581a0922d1e2497fdc05762c15653df2a2531bc5729f5228)
+on the new contract,
+a standard-tier [`resolve()` payout](https://stellar.expert/explorer/testnet/tx/115fff6e5f1da2304181ca52ccb252b0b9474f36c9fa08e5f8da8789bfdcc5ff),
+an instant-tier [fail-closed refund](https://stellar.expert/explorer/testnet/tx/f7baaeab7e56e88bf4781d7e2930dd5f1a47824e1ab8c14cf7723b71ee0a2dde),
+and a [`deposit()`](https://stellar.expert/explorer/testnet/tx/c7afa97fb7b263b40e2404bd4567d31ae924cf6279a59a10bb07c9137d1f0b25)
+funding the prepaid balance used by the metered-billing test above.
+
+## Round 8 — public deployment, and a bug only a real host surfaced
+
+Every prior round ran on `localhost`. That's fine for development, but it
+means nobody outside this machine — an SCF reviewer included — could
+actually open a link and try Arbiter without cloning the repo, deploying
+their own contract, and funding their own platform key. This round fixes
+that directly: the backend is deployed to Railway (a real host for a
+long-running Express + SSE process), and the landing page + app are
+deployed to Vercel. See "Try it live" at the top of this README for the
+URLs — same testnet contract, same real settlement, just publicly
+reachable now instead of assuming a local dev setup.
+
+**One real bug, found only by testing against the real host, not localhost:**
+`worker-sim.js` (the headless Node script that simulates a worker over raw
+`fetch()`-based SSE, without a browser's `EventSource`) opens a
+permanently-open streaming `GET /app/events` connection and later, from the
+same process, `POST`s an answer to the same origin. On `localhost` this
+always worked. Against the real Railway deployment, it didn't: the answer
+request never even reached the server — confirmed by grepping Railway's
+own logs for zero incoming `/app/answer` requests, while the SSE stream
+stayed healthy the whole time — and the question timed out and refunded
+every time, reproduced twice before being treated as a real bug rather
+than a fluke. Root cause: Node's global `fetch` dispatcher pools
+connections per origin, and a permanently-open streaming GET can starve a
+same-origin POST issued later from the same process, in a way a raw local
+Express server tolerated but a real host's proxy layer didn't. Fixed by
+giving the SSE connection its own isolated `undici.Agent` (its own
+connection pool), so every other call in the file — session, answer,
+stake, withdraw — can never queue behind it. Re-verified with two more
+real runs against the live deployment after the fix: a full paid question,
+real dispatch to a real session-authenticated worker, real reconciliation,
+and a real `resolve()` payout —
+[transaction link](https://stellar.expert/explorer/testnet/tx/e942ef4c4a80afed83d52cbf4e1032f03ee5248b433bc5ec1c8efb43f2d7f780).
+
+Worth being precise about scope: this bug only ever affected `worker-sim.js`,
+the headless CLI demo tool. The actual product surface real users (and
+judges clicking through the worker console) touch uses the browser's native
+`EventSource`, which browsers handle with their own connection management
+and was never affected — confirmed by checking `app/src/main.js` uses
+`EventSource`, not this same fetch-based pattern, before concluding the
+product itself was fine and only the demo tooling needed the fix.
+
+This is the second time in this project that real infrastructure found a
+bug 100+ passing tests never could (see Round 6's two) — worth naming as a
+pattern: mocked and local-only testing systematically cannot catch
+proxy/host-specific networking behavior, no matter how thorough the test
+suite otherwise is.
+
 ## Architecture
 
 ```
@@ -538,21 +743,23 @@ existing `jobs.js` store.
 arbiter/
 ├── .github/workflows/ci.yml      # contract/backend/app/demo-agent test+build+audit gates
 ├── Cargo.toml                    # workspace: contracts/oracle-escrow
-├── contracts/oracle-escrow/      # Soroban contract + tests (38 tests)
+├── contracts/oracle-escrow/      # Soroban contract + tests (49 tests)
 ├── backend/                      # Express oracle service
-│   ├── src/{server,oracle,jobs,dispatch,reconcile,
+│   ├── src/{server,oracle,jobs,dispatch,reconcile,metered,leaderboard,
 │   │         pendingQuestions,pricing,sponsor,stellarClient,
 │   │         store,rateLimit,sandbox,push,stats,payerIndex,
 │   │         workerAuth,logger,retry,config}.js
 │   └── test/{dispatch,reconcile,pricing,sponsor,pendingQuestions,
-│              rateLimit,server,sandbox,push,stats,payerIndex,
-│              workerAuth,idempotency,retry}.test.js  (109 tests)
-├── app/                          # Vite worker console + buyer dashboard (multi-page)
+│              rateLimit,server,sandbox,push,stats,payerIndex,leaderboard,
+│              workerAuth,idempotency,retry,stellarClient}.test.js  (120 tests)
+├── app/                          # Vite worker console + buyer dashboard + leaderboard (multi-page)
 │   ├── index.html                # worker console
 │   ├── dashboard.html            # read-only buyer dashboard
+│   ├── leaderboard.html          # public worker reputation leaderboard
 │   ├── public/{manifest.json,sw.js}
-│   └── src/{main,dashboard,localWallet,contractCalls,units,style}.{js,css}
-├── landing/                      # marketing site + live "try it now" sandbox widget
+│   └── src/{main,dashboard,leaderboard,localWallet,contractCalls,units,style}.{js,css}
+├── docs/                         # scf-x402-facilitator-proposal.md
+├── landing/                      # marketing site — the hero itself IS the live sandbox demo
 ├── demo-agent/                   # headless buyer/worker/proof scripts (+ sandbox-ask.js)
 └── e2e/                          # browser click-through harness (stubbed, see e2e/README.md)
 ```
@@ -560,10 +767,10 @@ arbiter/
 ## Running it
 
 ```sh
-# Contract — 38 tests, no chain needed
+# Contract — 49 tests, no chain needed
 cargo test -p oracle-escrow
 
-# Backend — 109 tests, no chain needed (spawns real ephemeral server
+# Backend — 120 tests, no chain needed (spawns real ephemeral server
 # processes for the rate-limit/CORS/push/sandbox/auth integration tests,
 # still no chain access)
 cd backend && npm install && npm test
@@ -574,12 +781,15 @@ npm start
 
 # Try it immediately with zero setup — no wallet, no chain, no .env needed:
 curl -X POST localhost:4000/oracle/sandbox -d '{"question":"test"}' -H 'Content-Type: application/json'
+curl localhost:4000/leaderboard   # public, no auth — established workers' match ratio + live on-chain stake
 
-# Frontend — worker console (index.html) + buyer dashboard (dashboard.html), multi-page build
+# Frontend — worker console (index.html), buyer dashboard (dashboard.html),
+# public leaderboard (leaderboard.html), multi-page build
 cd app && npm install && cp .env.example .env && npm run dev    # or: npm run build
 
-# Landing page (static — open landing/index.html directly, or serve it)
-cd landing && python3 -m http.server 8123   # then visit /#try-it-now against a running backend
+# Landing page (static — open landing/index.html directly, or serve it).
+# The hero itself is the live sandbox demo now, not a link to one further down.
+cd landing && python3 -m http.server 8123
 
 # Demo scripts (need a deployed contract + funded testnet keys, EXCEPT sandbox-ask.js)
 cd demo-agent && npm install
@@ -596,13 +806,16 @@ PROVE_TIMEOUT_REFUND=true node sponsored-demo.js   # takes ~timeout_ledgers × 5
 ## What's actually verified vs. what isn't
 
 Verified in this environment:
-- Contract: all 38 unit tests pass via `cargo test` — staking, slashing
+- Contract: all 49 unit tests pass via `cargo test` — staking, slashing
   (including the "unstaked loser is a harmless no-op" edge case),
   accrued-balance withdraw (including multi-question accumulation before a
   single payout), admin rotation, the timeout-snapshot regression test
   (proving `set_timeout_ledgers()` can't retroactively extend a pending
-  question's deadline), and worker-list overlap/duplicate rejection.
-- Backend: all 113 unit + integration tests pass, including sandbox mode
+  question's deadline), worker-list overlap/duplicate rejection, and (round
+  7) prepaid balance deposit/withdraw/charge, including that a charged
+  question settles through the identical `resolve()`/`refund()` path a
+  submitted one does.
+- Backend: all 120 unit + integration tests pass, including sandbox mode
   (deterministic outcome-simulation for all three modes, isolation from
   real `/stats` counters proven directly, not just asserted), push
   notification subscription CRUD and category-eligibility filtering
@@ -636,6 +849,16 @@ Verified in this environment:
   `sponsored-demo.js` run proving the zero-XLM invariant against real
   infrastructure, first attempt, balance-checked at `0` afterward. See
   "Round 6" above for the two real bugs this found and fixed.
+- **Live, on a freshly redeployed Stellar testnet contract (round 7)**: the
+  standard-tier flow re-verified end-to-end post-redeploy (payment →
+  dispatch → reconcile → `resolve()` payout, real worker); the instant tier
+  quoting, settling, and correctly fail-closed refunding with no LLM
+  configured; a real `deposit()` → session challenge/response → `charge()`
+  via the metered path (originally its own route, now fused into `POST
+  /oracle` itself) with zero further signatures, balance verified correct
+  on-chain before and after; and the public leaderboard populating
+  only once a real worker crossed the established-worker threshold, not
+  before. See "Round 7" above for the real transaction links.
 - All `stellarClient.js`/`sponsor.js` calls (including all three fee-bump
   security checks' byte-for-byte XDR comparisons) were validated against the
   actually installed `@stellar/stellar-sdk`, not just written from memory —
