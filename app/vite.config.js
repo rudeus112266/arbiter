@@ -20,6 +20,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         dashboard: resolve(__dirname, 'dashboard.html'),
+        leaderboard: resolve(__dirname, 'leaderboard.html'),
       },
     },
   },

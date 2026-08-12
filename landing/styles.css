@@ -645,7 +645,10 @@ pre:focus-visible {
   gap: var(--space-4);
 }
 @media (min-width: 860px) {
-  .pricing-grid { grid-template-columns: repeat(3, 1fr); }
+  .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1140px) {
+  .pricing-grid { grid-template-columns: repeat(4, 1fr); }
 }
 .price-card {
   position: relative;

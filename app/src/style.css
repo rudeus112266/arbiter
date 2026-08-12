@@ -182,6 +182,29 @@ button.secondary {
 .badge-refunded { background: #d9770633; color: #d97706; }
 .badge-pending { background: #5b4cf033; color: #5b4cf0; }
 
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+.leaderboard-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.leaderboard-table td {
+  padding: 0.6rem;
+  border-bottom: 1px dashed var(--border);
+}
+.leaderboard-table tbody tr:hover {
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+}
+
 .row {
   display: flex;
   align-items: center;

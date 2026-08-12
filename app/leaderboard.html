@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Worker Leaderboard</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">worker leaderboard</span></h1>
+        <p class="sub">
+          Public and no login required. Match ratio is this backend's own record, stated plainly
+          — stake is read live from the contract, so anyone can verify that part independently.
+          <a href="/index.html">Worker console →</a>
+        </p>
+      </header>
+
+      <section class="panel">
+        <div class="row">
+          <div class="muted small">Ranked by accuracy, then answer count. Established workers only.</div>
+          <button id="btn-refresh" class="secondary">Refresh</button>
+        </div>
+
+        <table id="leaderboard-table" class="leaderboard-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Worker</th>
+              <th>Match ratio</th>
+              <th>Answers</th>
+              <th>Stake (verifiable on-chain)</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-body">
+            <tr>
+              <td colspan="5" class="muted small">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <script type="module" src="/src/leaderboard.js"></script>
+  </body>
+</html>

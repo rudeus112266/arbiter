@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arbiter — Pay-per-question human-intelligence oracle on Stellar</title>
-  <meta name="description" content="Arbiter is a pay-per-question oracle API. Submit a question, pay in USDC, and a quorum of humans answers it — settled automatically on-chain, or fully refunded." />
+  <title>Arbiter — Ground truth for on-chain and technical claims, verified by staked humans</title>
+  <meta name="description" content="Arbiter is a pay-per-question verification API for on-chain and technical claims — audit findings, contract behavior, on-chain events. Pay in USDC, a staked quorum of humans checks it, settled automatically on-chain or fully refunded." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -40,80 +40,49 @@
     <section class="hero" id="top" aria-labelledby="hero-heading">
       <div class="container hero-grid">
         <div class="hero-copy reveal">
-          <p class="eyebrow">Human-intelligence oracle · Built on Stellar / Soroban</p>
-          <h1 id="hero-heading">Ask anything.<br />Pay only when it&nbsp;resolves.</h1>
+          <p class="eyebrow">Ground truth for on-chain &amp; technical claims · Built on Stellar / Soroban</p>
+          <h1 id="hero-heading">Is that audit finding real?<br />Put a stake on the answer.</h1>
           <p class="hero-sub">
-            Arbiter is a pay-per-question oracle API. Submit a question, pay in USDC, and a live
-            quorum of humans answers it — settled automatically on-chain, or fully refunded if
-            consensus isn&rsquo;t reached. No stuck funds, no partial states.
+            Arbiter verifies on-chain and technical claims — audit findings, contract behavior,
+            "did this transaction actually do what the README says" — with a real, USDC-staked
+            human quorum, not a raw LLM guess. Pay in USDC, get a settled answer on-chain, or a
+            full refund if consensus isn&rsquo;t reached. No stuck funds, no partial states.
           </p>
           <div class="hero-actions">
-            <a href="#try-it-now" class="btn btn-primary">Ask a question live</a>
+            <a href="#try-it-input" class="btn btn-primary">Verify a claim live</a>
             <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
           </div>
           <ul class="hero-trust" aria-label="At a glance">
             <li><strong>0.25 USDC</strong><span>starting price</span></li>
+            <li><strong>Staked</strong><span>quorum, not a guess</span></li>
             <li><strong>Fail-closed</strong><span>by design</span></li>
-            <li><strong>Zero XLM</strong><span>required to participate</span></li>
           </ul>
         </div>
 
+        <!-- This is a real, live call to a real Arbiter backend's
+             zero-payment sandbox endpoint, not a mockup — the fastest way
+             for a visitor to see a real response before setting up a
+             wallet or spending a cent. See script.js's "Try it now" block. -->
         <div class="hero-demo reveal">
-          <div class="terminal" aria-label="Example: requesting an answer">
-            <div class="terminal-bar">
-              <span class="dot dot-red" aria-hidden="true"></span><span class="dot dot-yellow" aria-hidden="true"></span><span class="dot dot-green" aria-hidden="true"></span>
-              <span class="terminal-title">oracle-request.sh</span>
+          <form class="try-it-card" id="try-it-form" aria-label="Verify a claim right now">
+            <p class="eyebrow">Try it — zero setup, zero wallet</p>
+            <label class="sr-only" for="try-it-input">Your question</label>
+            <input
+              id="try-it-input"
+              type="text"
+              maxlength="200"
+              placeholder="Does Soroban support reentrant contract calls?"
+              autocomplete="off"
+            />
+            <button type="submit" class="btn btn-primary" id="try-it-submit">Ask</button>
+
+            <div class="try-it-result" id="try-it-result" role="status" aria-live="polite">
+              <p class="try-it-placeholder">
+                Your answer will appear here — no payment, no chain, no signup.
+              </p>
             </div>
-            <pre class="terminal-body" tabindex="0"><code><span class="tok-muted">$</span> curl -X POST https://api.arbiter.dev/oracle \
-    -d <span class="tok-string">'{"question":"What year did Stellar launch?"}'</span>
-
-<span class="tok-muted">&lt; HTTP/1.1</span> <span class="tok-status">402 Payment Required</span>
-<span class="tok-brace">{</span>
-  <span class="tok-key">"questionId"</span>: <span class="tok-string">"17285…"</span>,
-  <span class="tok-key">"amount"</span>: <span class="tok-string">"0.25"</span>,
-  <span class="tok-key">"asset"</span>: <span class="tok-brace">{</span> <span class="tok-key">"code"</span>: <span class="tok-string">"USDC"</span> <span class="tok-brace">}</span>,
-  <span class="tok-key">"instructions"</span>: <span class="tok-string">"submit() to pay,
-    then retry with X-Payment-Tx"</span>
-<span class="tok-brace">}</span></code></pre>
-          </div>
+          </form>
         </div>
-      </div>
-    </section>
-
-    <!-- TRY IT NOW (sandbox — free, no wallet) -->
-    <section class="section try-it" id="try-it-now" aria-labelledby="try-it-heading">
-      <div class="container try-it-inner">
-        <div class="reveal">
-          <p class="eyebrow">Sandbox mode · Free · No wallet needed</p>
-          <h2 id="try-it-heading" class="section-heading">Ask a real question right now</h2>
-          <p class="section-sub">
-            This calls a real Arbiter backend's sandbox endpoint — no payment, no chain, no
-            signup. It's the fastest way to see the exact response shape you'd build against,
-            before you set up a wallet or spend a cent.
-          </p>
-        </div>
-
-        <form class="try-it-card reveal" id="try-it-form">
-          <label class="sr-only" for="try-it-input">Your question</label>
-          <input
-            id="try-it-input"
-            type="text"
-            maxlength="200"
-            placeholder="What year did Stellar launch?"
-            autocomplete="off"
-          />
-          <button type="submit" class="btn btn-primary" id="try-it-submit">Ask</button>
-
-          <div class="try-it-result" id="try-it-result" role="status" aria-live="polite">
-            <p class="try-it-placeholder">Your answer will appear here.</p>
-          </div>
-
-          <p class="muted small">
-            Points at <code id="try-it-endpoint">http://localhost:4000</code> by default — run
-            the Arbiter backend locally to try this live. Sandbox responses are clearly labeled
-            and never touch real funds or a real chain.
-          </p>
-        </form>
       </div>
     </section>
 
@@ -125,8 +94,8 @@
           <li class="step reveal">
             <span class="step-index">01</span>
             <h3>Ask</h3>
-            <p><code>POST</code> your question to <code>/oracle</code>. No API key, no signup —
-              just a question.</p>
+            <p><code>POST</code> the claim you need checked to <code>/oracle</code> — an audit
+              finding, a contract's behavior, an on-chain event. No API key, no signup.</p>
           </li>
           <li class="step reveal">
             <span class="step-index">02</span>
@@ -181,9 +150,10 @@
 
           <article class="feature-card reveal">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9 12.5l2 2 4-4.5"/></svg>
-            <h3>Staked worker reputation</h3>
-            <p>Workers can post a USDC bond as a credibility signal. Answers that lose a
-              quorum vote forfeit a slice of it — automatically, on-chain.</p>
+            <h3>Staked verifier reputation</h3>
+            <p>Workers post a real USDC bond as a credibility signal before checking a claim.
+              Answers that lose a quorum vote forfeit a slice of it — automatically, on-chain.
+              Real money behind a claim, not just an opinion.</p>
           </article>
 
           <article class="feature-card reveal">
@@ -212,8 +182,9 @@
             clean refund reason if consensus couldn&rsquo;t be reached.</p>
           <ul class="dev-list">
             <li>Async job model — no long-held HTTP connections</li>
-            <li>Three pricing tiers trading price for speed and quorum size</li>
+            <li>Four tiers, from an instant AI draft to a 5-worker staked quorum</li>
             <li>Confidence score and reconciliation method on every response</li>
+            <li>Public, on-chain-verifiable <a href="https://arbiter-app-ten.vercel.app/leaderboard.html">verifier leaderboard</a></li>
           </ul>
         </div>
 
@@ -240,10 +211,20 @@
     <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
       <div class="container">
         <h2 id="pricing-heading" class="section-heading reveal">Pricing</h2>
-        <p class="section-sub reveal">Pick a tier per question. Price scales with live worker
+        <p class="section-sub reveal">Pick a tier per claim. Price scales with live verifier
           supply and is always quoted before you pay.</p>
 
         <div class="pricing-grid">
+          <article class="price-card reveal">
+            <h3>Instant</h3>
+            <p class="price">0.05 <span>USDC</span></p>
+            <ul>
+              <li>No human quorum — an AI draft</li>
+              <li>Seconds, not a wait</li>
+              <li>A fast lean, not a verified claim</li>
+            </ul>
+          </article>
+
           <article class="price-card reveal">
             <h3>Standard</h3>
             <p class="price">0.25 <span>USDC</span></p>
@@ -284,8 +265,10 @@
     <section class="worker-band" aria-labelledby="worker-heading">
       <div class="container worker-band-inner reveal">
         <div>
-          <h2 id="worker-heading">Answer questions. Get paid in USDC.</h2>
-          <p>Go online, answer what you know, get settled on-chain automatically.</p>
+          <h2 id="worker-heading">Verify claims. Get paid in USDC.</h2>
+          <p>Auditors, on-chain analysts, and technical reviewers: stake a bond, check what you
+            actually know, get settled on-chain automatically. Wrong quorum answers cost you a
+            slice of your stake — right ones build a public, verifiable track record.</p>
         </div>
         <a href="#" class="btn btn-secondary btn-on-dark">Start earning</a>
       </div>
@@ -296,8 +279,8 @@
       <div class="container">
         <h2 id="trust-heading" class="sr-only">Technical credibility</h2>
         <ul class="trust-grid reveal">
-          <li><strong>38</strong><span>contract tests passing</span></li>
-          <li><strong>44</strong><span>backend tests passing</span></li>
+          <li><strong>49</strong><span>contract tests passing</span></li>
+          <li><strong>120</strong><span>backend tests passing</span></li>
           <li><strong>100%</strong><span>fail-closed settlement paths</span></li>
           <li><strong>Open</strong><span>architecture, verifiable on-chain</span></li>
         </ul>
@@ -311,6 +294,16 @@
         <h2 id="faq-heading" class="section-heading reveal">Frequently asked</h2>
 
         <div class="faq-list reveal">
+          <details class="faq-item">
+            <summary>Why a human quorum instead of just asking an LLM?</summary>
+            <p>For claims where being wrong is expensive — an audit finding, whether a contract
+              actually does what it claims, whether an on-chain event happened the way it's
+              described — a raw LLM call has no skin in the game. Arbiter's quorum does: workers
+              post a real USDC bond, and a wrong answer that loses the quorum vote costs them a
+              slice of it. If you just want a fast lean with no stake behind it, the Instant tier
+              gives you that directly, priced and labeled differently from a verified answer.</p>
+          </details>
+
           <details class="faq-item">
             <summary>What happens if workers disagree?</summary>
             <p>Answers are reconciled by an LLM tolerant of paraphrasing, with a deterministic
@@ -352,7 +345,7 @@
       <div class="container reveal">
         <h2 id="final-cta-heading">Ask your first question in under a minute.</h2>
         <div class="hero-actions center">
-          <a href="#developers" class="btn btn-primary">Ask a question live</a>
+          <a href="#try-it-input" class="btn btn-primary">Ask a question live</a>
           <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
         </div>
       </div>
