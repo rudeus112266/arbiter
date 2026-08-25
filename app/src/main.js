@@ -9,7 +9,8 @@ import {
   HotWalletModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
-import { buildStakeXdr, buildWithdrawXdr } from './contractCalls.js';
+import { StrKey } from '@stellar/stellar-sdk';
+import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -56,6 +57,7 @@ const el = {
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
+  withdrawBeneficiaryInput: document.getElementById('withdraw-beneficiary-input'),
   stakeForm: document.getElementById('stake-form'),
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
@@ -424,8 +426,24 @@ function renderTrackRecord({ matched, total, matchRatio }) {
 el.btnWithdraw.addEventListener('click', async () => {
   el.btnWithdraw.disabled = true;
   try {
+    // Optional — leave blank to withdraw to your own address (the common
+    // case). Fill it in to route the payout elsewhere (an exchange deposit
+    // address, a cold wallet) without ever holding the funds at the signing
+    // key first.
+    const beneficiary = el.withdrawBeneficiaryInput.value.trim();
+    if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
+      throw new Error('payout address is not a valid Stellar public key');
+    }
+
+    const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
+    if (!owedRes.ok) throw new Error(`could not look up accrued balance: ${owedRes.status}`);
+    const { owedStroops } = await owedRes.json();
+    if (BigInt(owedStroops) <= 0n) throw new Error('nothing accrued to withdraw yet');
+
     log('Building withdraw transaction…');
-    const xdr = await buildWithdrawXdr(state.address);
+    const xdr = beneficiary
+      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
+      : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
       networkPassphrase: WalletNetwork.TESTNET,
@@ -433,11 +451,16 @@ el.btnWithdraw.addEventListener('click', async () => {
     const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ xdr: signedTxXdr, workerAddress: state.address }),
+      body: JSON.stringify({
+        xdr: signedTxXdr,
+        workerAddress: state.address,
+        amountStroops: owedStroops,
+        ...(beneficiary ? { beneficiaryAddress: beneficiary } : {}),
+      }),
     });
     if (!res.ok) throw new Error((await res.json()).error || `withdraw failed: ${res.status}`);
     const { hash } = await res.json();
-    log(`Withdrew accrued earnings (tx ${hash})`);
+    log(beneficiary ? `Withdrew accrued earnings to ${beneficiary} (tx ${hash})` : `Withdrew accrued earnings (tx ${hash})`);
     await refreshEarnings();
   } catch (err) {
     log(`Withdraw failed: ${err.message}`);

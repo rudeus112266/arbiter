@@ -6,6 +6,7 @@ import { resolveQuestion, refundQuestion, getQuestionOnChain } from './stellarCl
 import { resolveTier, listTiersForClient, stroopsToUsdc, priceForTier } from './pricing.js';
 import { incrementStat } from './stats.js';
 import { recordPayerQuestion } from './payerIndex.js';
+import { notifyWorker } from './push.js';
 import { jobLogger } from './logger.js';
 import { store } from './store.js';
 import { config } from './config.js';
@@ -263,6 +264,19 @@ async function settleResolved(questionId, submissions, result) {
     await recordReputationOutcomes(submissions, result.matchingWorkerIds);
     await dropStashedQuestion(questionId);
     await incrementStat('resolved');
+
+    // Proactive "you got paid" push — a worker who answers once and closes
+    // the tab has no other way to learn they were credited (the console
+    // only shows it on the next visit/poll). notifyWorker() never throws,
+    // so a failed notification can never put settlement itself at risk.
+    for (const workerId of result.matchingWorkerIds) {
+      notifyWorker(workerId, {
+        title: 'You got paid on Arbiter',
+        body: 'Your answer matched consensus — the payout is credited and ready to withdraw.',
+        questionId: questionId.toString(),
+        type: 'credited',
+      }).catch(() => {});
+    }
     await updateJob(questionId, {
       status: 'settled',
       outcome: 'resolved',

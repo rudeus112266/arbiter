@@ -102,16 +102,16 @@ export async function buildSignedStakeXdr(workerKeypair, amountStroops) {
   return prepared.toXDR();
 }
 
-/** Builds a signed-but-not-submitted withdraw(worker) transaction XDR —
- * relayed through /sponsor/withdraw so a zero-XLM worker can collect their
- * accrued earnings without ever holding a stroop of XLM. */
-export async function buildSignedWithdrawXdr(workerKeypair) {
+/** Builds a signed-but-not-submitted withdraw(worker, amountStroops)
+ * transaction XDR — relayed through /sponsor/withdraw so a zero-XLM worker
+ * can collect their accrued earnings without ever holding a stroop of XLM. */
+export async function buildSignedWithdrawXdr(workerKeypair, amountStroops) {
   const srv = getServer();
   const account = await srv.getAccount(workerKeypair.publicKey());
   const contract = new Contract(env.contractId);
 
   const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: env.networkPassphrase })
-    .addOperation(contract.call('withdraw', addressArg(workerKeypair.publicKey())))
+    .addOperation(contract.call('withdraw', addressArg(workerKeypair.publicKey()), i128Arg(amountStroops)))
     .setTimeout(60)
     .build();
 

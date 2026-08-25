@@ -34,8 +34,21 @@ export async function buildStakeXdr(workerAddress, amountStroops) {
   ]);
 }
 
-export async function buildWithdrawXdr(workerAddress) {
-  return buildUnsignedCallXdr(workerAddress, 'withdraw', [new Address(workerAddress).toScVal()]);
+export async function buildWithdrawXdr(workerAddress, amountStroops) {
+  return buildUnsignedCallXdr(workerAddress, 'withdraw', [
+    new Address(workerAddress).toScVal(),
+    nativeToScVal(BigInt(amountStroops), { type: 'i128' }),
+  ]);
+}
+
+/** Same withdrawal, routed to `beneficiaryAddress` instead of the signing
+ * key — `workerAddress` still signs and still owns the balance drawn down. */
+export async function buildWithdrawToXdr(workerAddress, beneficiaryAddress, amountStroops) {
+  return buildUnsignedCallXdr(workerAddress, 'withdraw_to', [
+    new Address(workerAddress).toScVal(),
+    new Address(beneficiaryAddress).toScVal(),
+    nativeToScVal(BigInt(amountStroops), { type: 'i128' }),
+  ]);
 }
 
 export { NETWORK_PASSPHRASE };

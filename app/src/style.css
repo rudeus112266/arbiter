@@ -114,6 +114,21 @@ button.secondary {
   color: #d97706;
 }
 
+#withdraw-beneficiary-row {
+  margin-top: 0.5rem;
+}
+
+#withdraw-beneficiary-row input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+}
+
 #panel-backup .row input {
   flex: 1;
   padding: 0.5rem 0.7rem;

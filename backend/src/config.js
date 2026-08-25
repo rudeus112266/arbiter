@@ -70,6 +70,13 @@ export const config = Object.freeze({
     rateLimitWindowMs: num(process.env.WORKER_RATE_LIMIT_WINDOW_MS, 60_000),
     minAnswersBeforeReputationGate: num(process.env.WORKER_MIN_ANSWERS_BEFORE_REPUTATION_GATE, 5),
     minMatchRatio: num(process.env.WORKER_MIN_MATCH_RATIO, 0.2),
+    // Once a worker crosses minAnswersBeforeReputationGate (has real accrued
+    // earnings/reputation on the line), they must maintain at least this much
+    // on-chain stake to keep receiving new questions — closes the "unstake to
+    // zero, then misbehave for free" gap found pressure-testing the netting
+    // engine. Past Owed earnings are never touched by this; it only gates
+    // future dispatch eligibility. 0 (default) preserves today's behavior.
+    minStakeStroops: BigInt(process.env.WORKER_MIN_STAKE_STROOPS || '0'),
   }),
 
   // Every one of these endpoints either costs the platform a real network

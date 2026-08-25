@@ -161,11 +161,11 @@ async function autoWithdrawLoop() {
       if (BigInt(owedStroops) <= 0n) continue;
 
       console.log(`[${workerId}] ${owed} USDC accrued — withdrawing…`);
-      const xdr = await buildSignedWithdrawXdr(workerKeypair);
+      const xdr = await buildSignedWithdrawXdr(workerKeypair, owedStroops);
       const res = await fetch(`${env.backendUrl}/sponsor/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ xdr, workerAddress: workerId }),
+        body: JSON.stringify({ xdr, workerAddress: workerId, amountStroops: owedStroops }),
       });
       if (!res.ok) throw new Error(`withdraw failed: ${res.status} ${await res.text()}`);
       const { hash } = await res.json();

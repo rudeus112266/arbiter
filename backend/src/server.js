@@ -23,6 +23,7 @@ import {
   feeBumpSubmitPayment,
   feeBumpStake,
   feeBumpWithdraw,
+  feeBumpWithdrawTo,
 } from './sponsor.js';
 import { getStashedQuestion, nextQuestionId } from './pendingQuestions.js';
 import { getOwedOnChain, getStakeOnChain } from './stellarClient.js';
@@ -333,12 +334,17 @@ app.post('/sponsor/stake', rateLimited('sponsor', byIp), async (req, res) => {
 });
 
 app.post('/sponsor/withdraw', rateLimited('sponsor', byIp), async (req, res) => {
-  const { xdr, workerAddress } = req.body || {};
-  if (!xdr || !workerAddress) {
-    return res.status(400).json({ error: 'xdr and workerAddress are required' });
+  const { xdr, workerAddress, amountStroops, beneficiaryAddress } = req.body || {};
+  if (!xdr || !workerAddress || !amountStroops) {
+    return res.status(400).json({ error: 'xdr, workerAddress, and amountStroops are required' });
   }
   try {
-    const result = await feeBumpWithdraw(xdr, workerAddress);
+    // beneficiaryAddress is opt-in: present -> the worker signed a
+    // withdraw_to() call routing the payout elsewhere; absent -> the
+    // ordinary withdraw() call paying the worker's own address.
+    const result = beneficiaryAddress
+      ? await feeBumpWithdrawTo(xdr, workerAddress, beneficiaryAddress, amountStroops)
+      : await feeBumpWithdraw(xdr, workerAddress, amountStroops);
     res.json(result);
   } catch (err) {
     req.log.error({ err }, 'sponsor withdraw failed');
