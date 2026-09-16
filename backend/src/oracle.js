@@ -100,8 +100,7 @@ export async function verifyPayment(questionId) {
   }
 
   const tier = { ...resolveTier(pending.tierKey), priceStroops: quotedPriceStroops };
-  await recordPayerQuestion(onChain.payer, questionId);
-  return { ok: true, pending, tier };
+  return { ok: true, pending, tier, payerAddress: onChain.payer };
 }
 
 /**
@@ -120,8 +119,15 @@ export async function verifyPayment(questionId) {
  * atomic claim (see jobs.js::claimJob) rather than a plain existence check,
  * since two truly concurrent retries could otherwise both observe "no job
  * yet" and both proceed.
+ *
+ * `payerAddress` is optional (the sandbox path has no real payer) and, when
+ * present, is both stored on the job record (so the admin console's
+ * Transactions view can show who asked) and indexed via
+ * recordPayerQuestion — centralized here, the one place both the classic
+ * submit()-based flow (verifyPayment) and the prepaid-balance flow
+ * (askMetered) converge, instead of duplicated in each caller.
  */
-export async function startFulfillment(questionId, pending, tier) {
+export async function startFulfillment(questionId, pending, tier, payerAddress) {
   const claimed = await claimJob(questionId);
   if (!claimed) return { jobId: questionId };
 
@@ -132,7 +138,10 @@ export async function startFulfillment(questionId, pending, tier) {
     timeoutMs: tier.timeoutMs,
     amountStroops: tier.priceStroops.toString(),
     amount: stroopsToUsdc(tier.priceStroops),
+    payer: payerAddress || null,
   });
+
+  if (payerAddress) await recordPayerQuestion(payerAddress, questionId);
 
   fulfillOracleCall(questionId, pending, tier).catch((err) => {
     // fulfillOracleCall is written to always settle the escrow before

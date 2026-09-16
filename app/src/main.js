@@ -12,6 +12,7 @@ import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js'
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
+import { initBankWithdraw } from './anchor.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -57,6 +58,8 @@ const el = {
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
+  btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
+  bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
   withdrawBeneficiaryInput: document.getElementById('withdraw-beneficiary-input'),
   stakeForm: document.getElementById('stake-form'),
   stakeInput: document.getElementById('stake-input'),
@@ -467,6 +470,16 @@ el.btnWithdraw.addEventListener('click', async () => {
   } finally {
     el.btnWithdraw.disabled = false;
   }
+});
+
+initBankWithdraw({
+  button: el.btnWithdrawBank,
+  status: el.bankWithdrawStatus,
+  getAddress: () => state.address,
+  getWallet: () => state.activeWallet,
+  getArbiterSessionToken: ensureSession,
+  networkPassphrase: WalletNetwork.TESTNET,
+  assetCode: USDC_ASSET_CODE,
 });
 
 el.stakeForm.addEventListener('submit', async (evt) => {

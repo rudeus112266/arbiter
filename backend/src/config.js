@@ -106,6 +106,10 @@ export const config = Object.freeze({
       max: num(process.env.PUSH_RATE_LIMIT_MAX, 10),
       windowMs: num(process.env.PUSH_RATE_LIMIT_WINDOW_MS, 60_000),
     }),
+    billing: Object.freeze({
+      max: num(process.env.BILLING_RATE_LIMIT_MAX, 10),
+      windowMs: num(process.env.BILLING_RATE_LIMIT_WINDOW_MS, 60_000),
+    }),
   }),
 
   vapid: Object.freeze({
@@ -130,5 +134,43 @@ export const config = Object.freeze({
     // How long a worker's session (proven once via a signed challenge
     // transaction) stays valid before they'd need to re-authenticate.
     ttlMs: num(process.env.WORKER_SESSION_TTL_MS, 12 * 60 * 60 * 1000),
+  }),
+
+  // Single shared operator secret for the /admin/* console — this codebase
+  // has no user-account system anywhere, so a bearer token is consistent
+  // with everything else here. Multi-operator auth is a real follow-up,
+  // not something to invent ahead of need.
+  admin: Object.freeze({
+    token: process.env.ADMIN_TOKEN || '',
+  }),
+
+  // Home domain of the SEP-24/SEP-12 anchor Arbiter integrates with for
+  // fiat rails (bank deposit/withdraw, KYC status). Arbiter is a CLIENT of
+  // this anchor's stellar.toml — it never stores PII or bank details
+  // itself. Unset disables the /anchor/* routes entirely.
+  anchor: Object.freeze({
+    homeDomain: process.env.ANCHOR_HOME_DOMAIN || '',
+  }),
+
+  // The non-crypto onramp (see billing.js): API-key customers pay in fiat
+  // via Stripe and are settled on-chain from ONE pooled balance under this
+  // dedicated identity — deliberately separate from platformSecret/
+  // platformAddress above (which already collects platform fee revenue via
+  // resolve()/refund()), so customer float and fee revenue never commingle
+  // in one account. Unset disables the /billing/* routes and the API-key
+  // branch of POST /oracle entirely (same fail-closed-if-unconfigured
+  // posture as admin.token above).
+  billing: Object.freeze({
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    fiatPoolSecret: process.env.FIAT_POOL_SECRET || '',
+    fiatPoolAddress: process.env.FIAT_POOL_ADDRESS || '',
+    // 1 USD = 1 USDC face value, at USDC's existing 7-decimal stroop
+    // convention (see pricing.js's stroopsToUsdc) — the simplest possible
+    // conversion for v1. Stripe's own processing fee is absorbed by the
+    // platform, not passed through to the credited balance; revisit if
+    // margin matters before volume does.
+    usdToStroops: 10_000_000n,
+    minTopupUsd: num(process.env.MIN_TOPUP_USD, 10),
   }),
 });

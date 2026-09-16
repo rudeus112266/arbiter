@@ -16,6 +16,7 @@
           Answer paid questions, get settled on-chain automatically.
           <a href="/dashboard.html">Buyer dashboard →</a>
           <a href="/leaderboard.html">Leaderboard →</a>
+          <a href="/admin.html">Admin →</a>
         </p>
       </header>
 
@@ -89,11 +90,15 @@
             <div class="muted small">Accrued (withdrawable)</div>
             <strong id="owed-amount">0.00 USDC</strong>
           </div>
-          <button id="btn-withdraw">Withdraw</button>
+          <div>
+            <button id="btn-withdraw">Withdraw</button>
+            <button id="btn-withdraw-bank" class="secondary hidden" type="button">Withdraw to bank</button>
+          </div>
         </div>
         <div class="row" id="withdraw-beneficiary-row">
           <input id="withdraw-beneficiary-input" type="text" placeholder="Payout address (optional — defaults to your own)" />
         </div>
+        <p class="muted small" id="bank-withdraw-status"></p>
 
         <div class="row" style="margin-top: 0.75rem">
           <div>

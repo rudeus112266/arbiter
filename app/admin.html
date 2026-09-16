@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Admin Console</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
+      <h2>Admin console</h2>
+      <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
+      <div class="row">
+        <input id="admin-token-input" type="password" placeholder="Admin token" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+        <button id="btn-admin-login">Enter</button>
+      </div>
+      <p id="admin-login-status" class="muted small"></p>
+    </section>
+
+    <div id="admin-shell" class="admin-shell hidden">
+      <nav class="admin-nav">
+        <h1>Arbiter <span class="tag">admin</span></h1>
+
+        <div class="admin-nav-group">
+          <h3>Platform</h3>
+          <button class="admin-nav-link" data-view="overview">Overview</button>
+          <button class="admin-nav-link" data-view="workers">Workers</button>
+          <button class="admin-nav-link" data-view="payers">Payers</button>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Finance</h3>
+          <button class="admin-nav-link" data-view="transactions">Transactions</button>
+          <button class="admin-nav-link" data-view="fees">Fee Revenue</button>
+          <button class="admin-nav-link" data-view="treasury">Treasury</button>
+          <button class="admin-nav-link" data-view="kyc">KYC &amp; Tiers</button>
+          <button class="admin-nav-link" data-view="payouts">Bank Payouts</button>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Infrastructure</h3>
+          <button class="admin-nav-link" data-view="blockchain">Blockchain</button>
+          <button class="admin-nav-link" data-view="fraud">Fraud &amp; Trust</button>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Growth</h3>
+          <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
+        </div>
+      </nav>
+
+      <main class="admin-content">
+        <section id="view-overview" class="admin-view">
+          <h2>Overview</h2>
+          <div class="admin-stat-grid">
+            <div class="panel">
+              <div class="muted small">Fee revenue (settled)</div>
+              <strong id="ov-fees">—</strong>
+            </div>
+            <div class="panel">
+              <div class="muted small">Treasury (USDC)</div>
+              <strong id="ov-treasury-usdc">—</strong>
+            </div>
+            <div class="panel">
+              <div class="muted small">Treasury (XLM)</div>
+              <strong id="ov-treasury-xlm">—</strong>
+            </div>
+            <div class="panel">
+              <div class="muted small">Known workers</div>
+              <strong id="ov-workers">—</strong>
+            </div>
+            <div class="panel">
+              <div class="muted small">Known payers</div>
+              <strong id="ov-payers">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-transactions" class="admin-view">
+          <h2>Transactions</h2>
+          <div class="panel">
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
+              </thead>
+              <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-workers" class="admin-view">
+          <h2>Workers</h2>
+          <div class="panel">
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Established</th><th>Stake</th><th>Owed</th></tr>
+              </thead>
+              <tbody id="workers-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-payers" class="admin-view">
+          <h2>Payers</h2>
+          <div class="panel">
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Payer</th><th>Total spend</th><th>Tracked</th><th>Settled</th><th>Success rate</th></tr>
+              </thead>
+              <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-fees" class="admin-view">
+          <h2>Fee Revenue</h2>
+          <div class="panel">
+            <p>Total resolved questions: <strong id="fees-count">—</strong></p>
+            <p>Total platform fee revenue: <strong id="fees-total">—</strong> USDC</p>
+            <p class="muted small">20% of every resolved question's amount, mirroring PLATFORM_FEE_BPS in the oracle-escrow contract — summed over this backend's own job records, not read live from chain.</p>
+          </div>
+        </section>
+
+        <section id="view-treasury" class="admin-view">
+          <h2>Treasury</h2>
+          <div class="panel" id="treasury-panel">
+            <p class="muted small">Loading…</p>
+          </div>
+        </section>
+
+        <section id="view-kyc" class="admin-view">
+          <h2>KYC &amp; Tiers</h2>
+          <div class="panel">
+            <p class="muted small">
+              Self-reported by each user's own browser after completing SEP-12/SEP-24 with the
+              configured anchor — this backend never queries an anchor for another address's
+              status (SEP-10 means only that address's own signature can). Not a live query.
+            </p>
+            <table class="leaderboard-table">
+              <thead><tr><th>Address</th><th>Status</th><th>Tier</th><th>Reported</th></tr></thead>
+              <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-payouts" class="admin-view">
+          <h2>Bank Payouts</h2>
+          <div class="panel">
+            <p class="muted small">Self-reported SEP-24 withdrawal history — same caveat as KYC &amp; Tiers above.</p>
+            <table class="leaderboard-table">
+              <thead><tr><th>Address</th><th>Amount</th><th>Status</th><th>Reported</th></tr></thead>
+              <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-blockchain" class="admin-view">
+          <h2>Blockchain</h2>
+          <div class="panel" id="blockchain-panel"></div>
+        </section>
+
+        <section id="view-fraud" class="admin-view">
+          <h2>Fraud &amp; Trust</h2>
+          <div class="panel">
+            <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Stake</th></tr>
+              </thead>
+              <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/admin.js"></script>
+  </body>
+</html>

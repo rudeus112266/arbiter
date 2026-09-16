@@ -11,7 +11,7 @@ import { withRetry } from './retry.js';
 const HORIZON_RETRY_OPTS = { attempts: 2, timeoutMs: 10_000, baseDelayMs: 300 };
 
 let horizonServer = null;
-function getHorizon() {
+export function getHorizon() {
   if (!horizonServer) {
     horizonServer = new Horizon.Server(config.horizonUrl, { allowHttp: config.horizonUrl.startsWith('http://') });
   }
