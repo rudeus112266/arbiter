@@ -9,15 +9,35 @@ function formatRatio(ratio) {
   return ratio === null ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
 
+// Built with createElement/textContent, not innerHTML — workerId is
+// whatever a caller passed as GET /app/events's ?worker= param (no auth
+// required for a non-address id, see workerAuth.js::requiresAuth), and
+// this table is public and unauthenticated. Interpolating it into HTML
+// would be a stored-XSS hole on the one page anyone can load with no
+// session at all.
 function renderRow(row, rank) {
   const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${rank}</td>
-    <td title="${row.workerId}">${truncateAddress(row.workerId)}</td>
-    <td>${formatRatio(row.matchRatio)} <span class="muted small">(${row.matched}/${row.totalAnswers})</span></td>
-    <td>${row.totalAnswers}</td>
-    <td>${row.stake} USDC</td>
-  `;
+
+  const rankCell = document.createElement('td');
+  rankCell.textContent = rank;
+
+  const idCell = document.createElement('td');
+  idCell.title = row.workerId;
+  idCell.textContent = truncateAddress(row.workerId);
+
+  const ratioCell = document.createElement('td');
+  const ratioSpan = document.createElement('span');
+  ratioSpan.className = 'muted small';
+  ratioSpan.textContent = `(${row.matched}/${row.totalAnswers})`;
+  ratioCell.append(`${formatRatio(row.matchRatio)} `, ratioSpan);
+
+  const totalCell = document.createElement('td');
+  totalCell.textContent = row.totalAnswers;
+
+  const stakeCell = document.createElement('td');
+  stakeCell.textContent = `${row.stake} USDC`;
+
+  tr.append(rankCell, idCell, ratioCell, totalCell, stakeCell);
   return tr;
 }
 

@@ -10,6 +10,40 @@ function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
 
+// Every table below renders data that traces back to caller-controlled
+// input somewhere upstream — a non-address workerId (no auth required,
+// see workerAuth.js::requiresAuth), or the fully self-reported fields
+// POST /anchor/report accepts from any session holder (status/tier/
+// amount/assetCode, rendered in the KYC/Payouts views below). This is the
+// admin console, holding a privileged bearer token in localStorage — the
+// one page where an innerHTML-based stored XSS would matter most. Built
+// with createElement/textContent throughout instead.
+function td(text, { className, title } = {}) {
+  const cell = document.createElement('td');
+  if (className) cell.className = className;
+  if (title !== undefined) cell.title = title;
+  cell.textContent = text;
+  return cell;
+}
+
+function row(cells) {
+  const tr = document.createElement('tr');
+  tr.append(...cells);
+  return tr;
+}
+
+function emptyRow(colspan, text) {
+  const cell = document.createElement('td');
+  cell.colSpan = colspan;
+  cell.className = 'muted small';
+  cell.textContent = text;
+  return row([cell]);
+}
+
+function replaceRows(tbody, rows) {
+  tbody.replaceChildren(...rows);
+}
+
 async function fetchAdmin(path) {
   const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(`${BACKEND_URL}${path}`, {
@@ -60,65 +94,71 @@ async function renderTransactions() {
   const tbody = document.getElementById('tx-body');
   const { transactions } = await fetchAdmin('/admin/transactions?limit=100');
   if (transactions.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted small">No transactions yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
     return;
   }
-  tbody.innerHTML = transactions
-    .map(
-      (t) => `
-    <tr>
-      <td title="${t.questionId}">${truncateAddress(String(t.questionId))}</td>
-      <td title="${t.payer || ''}">${truncateAddress(t.payer)}</td>
-      <td>${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC</td>
-      <td><span class="badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}">${t.status || '—'}</span></td>
-      <td>${t.outcome || '—'}</td>
-      <td class="muted small">${t.createdAt ? new Date(t.createdAt).toLocaleString() : '—'}</td>
-    </tr>`,
-    )
-    .join('');
+  replaceRows(
+    tbody,
+    transactions.map((t) => {
+      const badge = document.createElement('span');
+      badge.className = `badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}`;
+      badge.textContent = t.status || '—';
+      const statusCell = document.createElement('td');
+      statusCell.appendChild(badge);
+
+      return row([
+        td(truncateAddress(String(t.questionId)), { title: t.questionId }),
+        td(truncateAddress(t.payer), { title: t.payer || '' }),
+        td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
+        statusCell,
+        td(t.outcome || '—'),
+        td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
+      ]);
+    }),
+  );
 }
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');
   const { workers } = await fetchAdmin('/admin/workers');
   if (workers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted small">No workers recorded yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(6, 'No workers recorded yet.')]);
     return;
   }
-  tbody.innerHTML = workers
-    .map(
-      (w) => `
-    <tr>
-      <td title="${w.workerId}">${truncateAddress(w.workerId)}</td>
-      <td>${formatRatio(w.matchRatio)}</td>
-      <td>${w.totalAnswers}</td>
-      <td>${w.established ? 'yes' : 'no'}</td>
-      <td>${w.stake} USDC</td>
-      <td>${w.owed} USDC</td>
-    </tr>`,
-    )
-    .join('');
+  replaceRows(
+    tbody,
+    workers.map((w) =>
+      row([
+        td(truncateAddress(w.workerId), { title: w.workerId }),
+        td(formatRatio(w.matchRatio)),
+        td(w.totalAnswers),
+        td(w.established ? 'yes' : 'no'),
+        td(`${w.stake} USDC`),
+        td(`${w.owed} USDC`),
+      ]),
+    ),
+  );
 }
 
 async function renderPayers() {
   const tbody = document.getElementById('payers-body');
   const { payers } = await fetchAdmin('/admin/payers');
   if (payers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="muted small">No payers recorded yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(5, 'No payers recorded yet.')]);
     return;
   }
-  tbody.innerHTML = payers
-    .map(
-      (p) => `
-    <tr>
-      <td title="${p.payerAddress}">${truncateAddress(p.payerAddress)}</td>
-      <td>${p.totalSpend} USDC</td>
-      <td>${p.totalTracked}</td>
-      <td>${p.settled}</td>
-      <td>${formatRatio(p.successRate)}</td>
-    </tr>`,
-    )
-    .join('');
+  replaceRows(
+    tbody,
+    payers.map((p) =>
+      row([
+        td(truncateAddress(p.payerAddress), { title: p.payerAddress }),
+        td(`${p.totalSpend} USDC`),
+        td(p.totalTracked),
+        td(p.settled),
+        td(formatRatio(p.successRate)),
+      ]),
+    ),
+  );
 }
 
 async function renderFees() {
@@ -165,60 +205,65 @@ async function renderFraud() {
     .filter((w) => w.established && w.matchRatio !== null)
     .sort((a, b) => a.matchRatio - b.matchRatio);
   if (flagged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="muted small">No established workers yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(4, 'No established workers yet.')]);
     return;
   }
-  tbody.innerHTML = flagged
-    .map(
-      (w) => `
-    <tr>
-      <td title="${w.workerId}">${truncateAddress(w.workerId)}</td>
-      <td>${formatRatio(w.matchRatio)}</td>
-      <td>${w.totalAnswers}</td>
-      <td>${w.stake} USDC</td>
-    </tr>`,
-    )
-    .join('');
+  replaceRows(
+    tbody,
+    flagged.map((w) =>
+      row([
+        td(truncateAddress(w.workerId), { title: w.workerId }),
+        td(formatRatio(w.matchRatio)),
+        td(w.totalAnswers),
+        td(`${w.stake} USDC`),
+      ]),
+    ),
+  );
 }
 
 async function renderKyc() {
   const tbody = document.getElementById('kyc-body');
   const { customers } = await fetchAdmin('/admin/kyc');
   if (customers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="muted small">No self-reported KYC status yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(4, 'No self-reported KYC status yet.')]);
     return;
   }
-  tbody.innerHTML = customers
-    .map(
-      (c) => `
-    <tr>
-      <td title="${c.address}">${truncateAddress(c.address)}</td>
-      <td>${c.status || '—'}</td>
-      <td>${c.tier || '—'}</td>
-      <td class="muted small">${new Date(c.reportedAt).toLocaleString()}</td>
-    </tr>`,
-    )
-    .join('');
+  // status/tier are fully self-reported via POST /anchor/report by any
+  // session-holding caller — the single most attacker-reachable data this
+  // console renders. Never interpolated into HTML.
+  replaceRows(
+    tbody,
+    customers.map((c) =>
+      row([
+        td(truncateAddress(c.address), { title: c.address }),
+        td(c.status || '—'),
+        td(c.tier || '—'),
+        td(new Date(c.reportedAt).toLocaleString(), { className: 'muted small' }),
+      ]),
+    ),
+  );
 }
 
 async function renderPayouts() {
   const tbody = document.getElementById('payouts-body');
   const { payouts } = await fetchAdmin('/admin/payouts');
   if (payouts.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="muted small">No self-reported payouts yet.</td></tr>';
+    replaceRows(tbody, [emptyRow(4, 'No self-reported payouts yet.')]);
     return;
   }
-  tbody.innerHTML = payouts
-    .map(
-      (p) => `
-    <tr>
-      <td title="${p.address}">${truncateAddress(p.address)}</td>
-      <td>${p.amount || '—'} ${p.assetCode || ''}</td>
-      <td>${p.status || '—'}</td>
-      <td class="muted small">${new Date(p.reportedAt).toLocaleString()}</td>
-    </tr>`,
-    )
-    .join('');
+  // amount/assetCode/status are also fully self-reported via POST
+  // /anchor/report — same reasoning as renderKyc above.
+  replaceRows(
+    tbody,
+    payouts.map((p) =>
+      row([
+        td(truncateAddress(p.address), { title: p.address }),
+        td(`${p.amount || '—'} ${p.assetCode || ''}`),
+        td(p.status || '—'),
+        td(new Date(p.reportedAt).toLocaleString(), { className: 'muted small' }),
+      ]),
+    ),
+  );
 }
 
 const VIEWS = {
