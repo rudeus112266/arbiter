@@ -32,7 +32,7 @@ const el = {
   log: document.getElementById('log'),
 };
 
-const state = { address: null };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0 };
 
 function log(message) {
   const li = document.createElement('li');
@@ -45,6 +45,35 @@ function setConnectButtonsBusy(busy) {
   el.btnQuickStart.disabled = busy;
 }
 
+/** Proves control of this address once, same primitive as the worker
+ * console's ensureSession() — these questions/balance are only readable
+ * with a valid session now, not by anyone who just knows the address. */
+async function ensureSession() {
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+
+  log('Proving control of your address (one signature)…');
+  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
+  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
+  const { xdr } = await challengeRes.json();
+
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+    address: state.address,
+    networkPassphrase: WalletNetwork.TESTNET,
+  });
+
+  const sessionRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ signedXdr: signedTxXdr }),
+  });
+  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
+  const { token, expiresAt } = await sessionRes.json();
+  state.sessionToken = token;
+  state.sessionExpiresAt = expiresAt;
+  log('Session established.');
+  return token;
+}
+
 el.btnConnect.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
@@ -52,7 +81,7 @@ el.btnConnect.addEventListener('click', async () => {
       onWalletSelected: async (option) => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
-        await activate(address);
+        await activate(kit, address);
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
@@ -68,15 +97,17 @@ el.btnConnect.addEventListener('click', async () => {
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
-    const { address } = await createOrLoadLocalWallet().getAddress();
-    await activate(address);
+    const localWallet = createOrLoadLocalWallet();
+    const { address } = await localWallet.getAddress();
+    await activate(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
     log(`Quick start failed: ${err.message}`);
   }
 });
 
-async function activate(address) {
+async function activate(wallet, address) {
+  state.activeWallet = wallet;
   state.address = address;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
@@ -92,7 +123,8 @@ async function loadQuestions() {
   if (!state.address) return;
   el.btnRefresh.disabled = true;
   try {
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions`);
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
     if (!res.ok) throw new Error(`unexpected status ${res.status}`);
     const data = await res.json();
     render(data);

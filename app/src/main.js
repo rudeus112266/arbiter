@@ -544,6 +544,12 @@ if (el.btnEnablePush) {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') throw new Error('notification permission was not granted');
 
+      // Backend now requires proof of address control here too, same as
+      // answering a question — a subscription silently redirects this
+      // worker's notifications, so it can't be left open to anyone who
+      // just knows the address.
+      const token = await ensureSession();
+
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -553,7 +559,7 @@ if (el.btnEnablePush) {
       const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories() }),
+        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
 
