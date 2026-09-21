@@ -143,11 +143,25 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
 
       if (transaction.status === 'pending_user_transfer_start') {
-        status.innerHTML = `
-          Send <strong>${transaction.amount_in} ${assetCode}</strong> to
-          <code>${transaction.withdraw_anchor_account}</code>${transaction.withdraw_memo ? ` with memo <code>${transaction.withdraw_memo}</code>` : ''}
-          to complete this withdrawal — the anchor is now waiting for that on-chain payment.
-        `;
+        // Built with createElement/textContent, not innerHTML — amount_in,
+        // withdraw_anchor_account, and withdraw_memo all come straight from
+        // the configured anchor's own SEP-24 API response, a third party
+        // this backend doesn't control. A malicious or compromised anchor
+        // could otherwise inject markup here.
+        status.textContent = '';
+        status.append('Send ');
+        const amountStrong = document.createElement('strong');
+        amountStrong.textContent = `${transaction.amount_in} ${assetCode}`;
+        status.append(amountStrong, ' to ');
+        const accountCode = document.createElement('code');
+        accountCode.textContent = transaction.withdraw_anchor_account;
+        status.append(accountCode);
+        if (transaction.withdraw_memo) {
+          const memoCode = document.createElement('code');
+          memoCode.textContent = transaction.withdraw_memo;
+          status.append(' with memo ', memoCode);
+        }
+        status.append(' to complete this withdrawal — the anchor is now waiting for that on-chain payment.');
       } else if (transaction.status === 'completed') {
         status.textContent = 'Withdrawal completed by the anchor.';
       } else {
